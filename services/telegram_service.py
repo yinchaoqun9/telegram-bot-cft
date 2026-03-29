@@ -1,0 +1,240 @@
+"""
+Telegram Service - Handles Telegram Bot API interactions.
+
+- Download voice files via getFile
+- Send confirmation messages to users
+- All operations are async for non-blocking I/O.
+"""
+
+import logging
+from typing import Any, Dict, List, Union
+
+import httpx
+
+logger = logging.getLogger(__name__)
+
+TELEGRAM_API_BASE = "https://api.telegram.org/bot"
+
+
+class TelegramServiceError(Exception):
+    """Raised when Telegram API returns an error or request fails."""
+
+    pass
+
+
+class TelegramService:
+    """Service for Telegram Bot API operations (async)."""
+
+    def __init__(self, bot_token: str):
+        self.bot_token = bot_token
+        self.base_url = f"{TELEGRAM_API_BASE}{bot_token}"
+
+    async def get_file_path(self, file_id: str) -> str:
+        """
+        Get the file path for downloading a Telegram file.
+
+        Args:
+            file_id: Telegram file_id from the voice message
+
+        Returns:
+            file_path to use with getFile download URL
+
+        Raises:
+            TelegramServiceError: On API errors
+            httpx.HTTPStatusError: On HTTP errors
+        """
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            try:
+                resp = await client.get(
+                    f"{self.base_url}/getFile", params={"file_id": file_id}
+                )
+                resp.raise_for_status()
+                data = resp.json()
+            except httpx.HTTPStatusError as e:
+                logger.error("Telegram getFile failed: status=%s body=%s", e.response.status_code, e.response.text)
+                raise
+            except Exception as e:
+                logger.exception("Unexpected error in get_file_path: %s", e)
+                raise TelegramServiceError(f"Failed to get file path: {e}") from e
+
+        if not data.get("ok"):
+            logger.error("Telegram API returned ok=false: %s", data)
+            raise TelegramServiceError(f"Telegram API error: {data.get('description', data)}")
+
+        file_path = data.get("result", {}).get("file_path")
+        if not file_path:
+            raise TelegramServiceError("Telegram response missing file_path")
+
+        logger.debug("Got file path for file_id=%s: %s", file_id[:8], file_path)
+        return file_path
+
+    async def download_file(self, file_path: str) -> bytes:
+        """
+        Download a file from Telegram servers.
+
+        Args:
+            file_path: Path from getFile response
+
+        Returns:
+            Raw file bytes
+
+        Raises:
+            httpx.HTTPStatusError: On download errors
+        """
+        download_url = f"https://api.telegram.org/file/bot{self.bot_token}/{file_path}"
+
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            try:
+                resp = await client.get(download_url)
+                resp.raise_for_status()
+                content = resp.content
+                logger.debug("Downloaded file size=%d bytes", len(content))
+                return content
+            except httpx.HTTPStatusError as e:
+                logger.error("Telegram file download failed: url=%s status=%s", download_url, e.response.status_code)
+                raise
+            except Exception as e:
+                logger.exception("Unexpected error in download_file: %s", e)
+                raise TelegramServiceError(f"Failed to download file: {e}") from e
+
+    async def download_voice(self, file_id: str) -> bytes:
+        """
+        Convenience method: get file path and download voice file.
+
+        Args:
+            file_id: Telegram file_id from voice message
+
+        Returns:
+            Raw OGG/Opus audio bytes from Telegram
+        """
+        # Avoid logging file IDs at INFO (unnecessary in prod; can be noisy)
+        logger.info("Downloading voice message")
+        path = await self.get_file_path(file_id)
+        return await self.download_file(path)
+
+    async def send_message(
+        self, chat_id: Union[int, str], text: str
+    ) -> Dict[str, Any]:
+        """
+        Send a text message to a chat.
+
+        Args:
+            chat_id: Telegram chat ID
+            text: Message text (HTML parse_mode)
+
+        Returns:
+            API response data
+
+        Raises:
+            httpx.HTTPStatusError: On API errors
+        """
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            try:
+                resp = await client.post(
+                    f"{self.base_url}/sendMessage",
+                    json={"chat_id": chat_id, "text": text, "parse_mode": "HTML"},
+                )
+                resp.raise_for_status()
+                return resp.json()
+            except httpx.HTTPStatusError as e:
+                logger.error(
+                    "Telegram sendMessage failed: chat_id=%s status=%s body=%s",
+                    chat_id,
+                    e.response.status_code,
+                    e.response.text,
+                )
+                raise
+            except Exception as e:
+                logger.exception("Unexpected error in send_message: %s", e)
+                raise TelegramServiceError(f"Failed to send message: {e}") from e
+
+    async def send_error_message(
+        self, chat_id: Union[int, str], error: str
+    ) -> None:
+        """Send a user-friendly error message. Logs but does not raise on failure."""
+        try:
+            await self.send_message(chat_id, f"❌ Error: {error}")
+        except Exception as e:
+            logger.exception(
+                "Failed to send error message to chat_id=%s: %s", chat_id, e
+            )
+
+    async def send_saved_confirmation(
+        self,
+        chat_id: Union[int, str],
+        brand: str,
+        flavor: str,
+        best_by: str,
+        quantity: int,
+    ) -> None:
+        """Send confirmation that an inventory item was saved."""
+        msg = f"Saved: {brand} {flavor}, expires {best_by}, quantity {quantity}"
+        await self.send_message(chat_id, msg)
+
+    async def send_saved_confirmation_multi(
+        self,
+        chat_id: Union[int, str],
+        items: List[Dict[str, Any]],
+    ) -> None:
+        """
+        Send confirmation for one or more saved inventory items.
+
+        - If only one item, use the single-item format.
+        - If multiple, send a summary list.
+        """
+        if not items:
+            return
+
+        if len(items) == 1:
+            item = items[0]
+            await self.send_saved_confirmation(
+                chat_id,
+                item.get("brand", "") or "",
+                item.get("flavor", "") or "",
+                item.get("best_by", "") or "",
+                int(item.get("quantity") or 0),
+            )
+            return
+
+        lines = []
+        for idx, item in enumerate(items, start=1):
+            brand = item.get("brand", "") or ""
+            flavor = item.get("flavor", "") or ""
+            best_by = item.get("best_by", "") or ""
+            qty = int(item.get("quantity") or 0)
+            lines.append(
+                f"{idx}) {brand} {flavor}, expires {best_by}, quantity {qty}"
+            )
+
+        msg = "Saved {count} items:\n{items}".format(
+            count=len(items),
+            items="\n".join(lines),
+        )
+        await self.send_message(chat_id, msg)
+
+    async def delete_webhook(self) -> bool:
+        """Remove webhook so getUpdates can be used (for local polling)."""
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.get(f"{self.base_url}/deleteWebhook")
+            data = resp.json()
+        return data.get("ok", False)
+
+    async def get_updates(self, offset: int = 0, timeout: int = 30) -> list:
+        """
+        Poll for updates (use when running locally without webhook).
+
+        Returns:
+            List of update objects
+        """
+        async with httpx.AsyncClient(timeout=timeout + 5) as client:
+            resp = await client.get(
+                f"{self.base_url}/getUpdates",
+                params={"offset": offset, "timeout": timeout},
+            )
+            resp.raise_for_status()
+            data = resp.json()
+
+        if not data.get("ok"):
+            raise TelegramServiceError(f"getUpdates failed: {data}")
+
+        return data.get("result", [])

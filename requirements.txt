@@ -1,0 +1,28 @@
+# Telegram Bot Backend - Production Dependencies
+# Python 3.9+ recommended
+
+# Web framework
+fastapi>=0.109.0
+uvicorn[standard]>=0.27.0
+
+# HTTP client for Telegram API and file downloads
+httpx>=0.26.0
+
+# OpenAI SDK (Whisper + GPT)
+openai>=1.12.0
+
+# Supabase client
+supabase>=2.3.0
+
+# Environment variables
+python-dotenv>=1.0.0
+
+# Validation (pulled in by FastAPI)
+pydantic>=2.0.0
+
+# Audio conversion (Telegram OGG/Opus -> MP3 for Whisper)
+# Requires ffmpeg installed on system
+pydub>=0.25.0
+
+# Timezone handling for reminder jobs (optional but recommended)
+pytz>=2024.0

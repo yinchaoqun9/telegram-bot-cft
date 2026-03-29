@@ -1,0 +1,162 @@
+# Cat Inventory Telegram Bot
+
+Production-ready Telegram bot backend that processes voice notes, transcribes them with Whisper, extracts structured inventory data with GPT, and stores it in Supabase.
+
+## Features
+
+- **Webhook-based**: Receives Telegram updates via webhook
+- **Voice processing**: Downloads voice notes, transcribes with OpenAI Whisper
+- **Structured extraction**: Uses GPT to extract brand, flavor, best_by, quantity
+- **Supabase storage**: Inserts into `cat_inventory` table
+- **User confirmation**: Sends confirmation message back to the user
+
+## Project Structure
+
+```
+telegram-bot/
+├── main.py                 # FastAPI app, webhook endpoint
+├── services/
+│   ├── openai_service.py   # Whisper + GPT
+│   ├── supabase_service.py # Database operations
+│   └── telegram_service.py # Telegram API (download, send)
+├── requirements.txt
+├── .env.example
+└── README.md
+```
+
+## Setup
+
+### 1. Create Supabase table
+
+Run this SQL in your Supabase SQL editor:
+
+```sql
+CREATE TABLE cat_inventory (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id TEXT NOT NULL,
+  brand TEXT NOT NULL DEFAULT '',
+  flavor TEXT NOT NULL DEFAULT '',
+  best_by DATE,
+  quantity INTEGER NOT NULL DEFAULT 0,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Track which reminder offsets have been sent (e.g. 7,3,1)
+ALTER TABLE cat_inventory
+  ADD COLUMN IF NOT EXISTS reminded_offsets INT[] NOT NULL DEFAULT '{}';
+
+-- Map Telegram user_id to private chat_id for proactive reminders
+CREATE TABLE IF NOT EXISTS telegram_users (
+  user_id TEXT PRIMARY KEY,
+  chat_id BIGINT NOT NULL,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Optional: RLS policies (adjust as needed)
+ALTER TABLE cat_inventory ENABLE ROW LEVEL SECURITY;
+ALTER TABLE telegram_users ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Service role has full access"
+  ON cat_inventory FOR ALL
+  USING (true)
+  WITH CHECK (true);
+
+CREATE POLICY "Service role has full access"
+  ON telegram_users FOR ALL
+  USING (true)
+  WITH CHECK (true);
+```
+
+### 2. Environment variables
+
+Copy `.env.example` to `.env` and fill in:
+
+- `OPENAI_API_KEY` - OpenAI API key
+- `SUPABASE_URL` - Supabase project URL
+- `SUPABASE_SERVICE_KEY` - Supabase service role key (not anon key)
+- `TELEGRAM_BOT_TOKEN` - From @BotFather
+
+### 3. Install and run
+
+**Note:** Telegram voice messages use OGG/Opus format. Whisper requires MP3/WAV/etc. The bot uses `pydub` to convert OGG→MP3, which requires **ffmpeg** installed on your system.
+
+```bash
+# Install ffmpeg (required for OGG conversion)
+# macOS: brew install ffmpeg
+# Ubuntu: apt install ffmpeg
+
+cd telegram-bot
+python -m venv venv
+source venv/bin/activate  # or `venv\Scripts\activate` on Windows
+pip install -r requirements.txt
+python main.py
+```
+
+### 4a. Run locally (polling mode)
+
+For local development without a public URL:
+
+```bash
+python run_polling.py
+```
+
+This polls Telegram for updates—no webhook or ngrok needed.
+
+### 4b. Production: Set Telegram webhook
+
+Replace `YOUR_DOMAIN` with your public HTTPS URL:
+
+```bash
+curl "https://api.telegram.org/bot<YOUR_BOT_TOKEN>/setWebhook?url=https://YOUR_DOMAIN/webhook"
+```
+
+Then run the FastAPI server: `python main.py`
+
+## Usage
+
+### Single item example
+
+1. Send a voice message to your bot describing cat food, for example:
+   - English: `"Royal Canin chicken flavor, 12 cans, best by 2025-06-15"`
+   - Chinese: `"皇家猫粮鸡肉口味，12 罐，保质期 2025 年 6 月 15 号"`
+2. The bot transcribes, extracts data, saves to Supabase, and replies with a confirmation like:
+   - `Saved: Royal Canin chicken, expires 2025-06-15, quantity 12`
+
+### Multiple items in one message
+
+You can describe several items in a single voice message. For example:
+
+- Chinese:
+  > 第一种是 Fancy Feast 鸡肉口味，两罐，保质期 2025 年 6 月 1 号；第二种是 Purina 三文鱼口味，三罐，保质期也是 2025 年 6 月 1 号。
+
+- English:
+  > I have two cans of Fancy Feast chicken, best by June 1st 2025, and three cans of Purina salmon, same best by date.
+
+The bot will extract **multiple inventory rows** and save them. The confirmation might look like:
+
+```text
+Saved 2 items:
+1) Fancy Feast chicken, expires 2025-06-01, quantity 2
+2) Purina salmon, expires 2025-06-01, quantity 3
+```
+
+### Tips for better recognition
+
+- Speak naturally, but keep a **rough structure**: brand → flavor → quantity → best-by date.
+- You do **not** need to say explicit keywords like “brand” / “flavor”; they just make it a bit more robust.
+- Dates in any language are fine; the bot will try to normalize them to `YYYY-MM-DD`.
+
+## API Endpoints
+
+- `POST /webhook` - Telegram webhook (receives updates)
+- `GET /health` - Health check
+
+## Production Notes
+
+- Use HTTPS for the webhook URL (required by Telegram)
+- Install **ffmpeg** on the server for OGG→MP3 conversion (Telegram voice format)
+- All I/O is async (Telegram, OpenAI, Supabase) for non-blocking performance
+- Voice processing runs in background task; webhook returns 200 quickly to avoid Telegram timeout
+- For private-chat reminders, run `send_reminders.py` daily (cron/cloud scheduler) and ensure `telegram_users` + `reminded_offsets` are created in Supabase
+- Use `SUPABASE_SERVICE_KEY` (service role) for backend; never expose it to the client
+- Set `ENV=production` in production for non-reload mode

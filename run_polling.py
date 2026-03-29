@@ -1,0 +1,107 @@
+#!/usr/bin/env python3
+"""
+Run the bot in polling mode for local development.
+
+Use this when you don't have a public HTTPS URL for webhooks.
+Telegram will be polled via getUpdates instead.
+
+Usage:
+    python run_polling.py
+
+Requires .env with TELEGRAM_BOT_TOKEN, OPENAI_API_KEY, SUPABASE_URL, SUPABASE_SERVICE_KEY.
+"""
+
+import asyncio
+import logging
+import os
+import sys
+
+# Add project root to path
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+from dotenv import load_dotenv
+
+load_dotenv()
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+)
+logger = logging.getLogger(__name__)
+
+# Reduce noisy HTTP client logs (can include sensitive URLs)
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("openai").setLevel(logging.WARNING)
+logging.getLogger("openai._base_client").setLevel(logging.WARNING)
+
+
+async def main() -> None:
+    from main import process_voice_message
+    from services.telegram_service import TelegramService, TelegramServiceError
+    from main import get_supabase
+
+    token = os.environ.get("TELEGRAM_BOT_TOKEN")
+    if not token:
+        logger.error("TELEGRAM_BOT_TOKEN not set in .env")
+        sys.exit(1)
+
+    tg = TelegramService(bot_token=token)
+
+    # Remove webhook so Telegram sends updates to getUpdates
+    ok = await tg.delete_webhook()
+    if ok:
+        logger.info("Webhook removed, using polling")
+    else:
+        logger.warning("Could not remove webhook (may already be unset)")
+
+    offset = 0
+    logger.info("Polling for updates... (Ctrl+C to stop)")
+
+    while True:
+        try:
+            updates = await tg.get_updates(offset=offset, timeout=30)
+        except TelegramServiceError as e:
+            logger.error("getUpdates failed: %s", e)
+            await asyncio.sleep(5)
+            continue
+
+        for update in updates:
+            offset = update["update_id"] + 1
+
+            message = update.get("message") or update.get("edited_message")
+            if not message:
+                continue
+
+            chat_id = message.get("chat", {}).get("id")
+            user_id = message.get("from", {}).get("id")
+            voice = message.get("voice")
+
+            if not chat_id or not user_id:
+                continue
+
+            # Best-effort: persist mapping for reminders
+            try:
+                await get_supabase().upsert_telegram_user(
+                    user_id=str(user_id), chat_id=int(chat_id)
+                )
+            except Exception as e:
+                logger.warning("Failed to upsert telegram user mapping (polling): %s", e)
+
+            if voice:
+                file_id = voice.get("file_id")
+                if file_id:
+                    await process_voice_message(chat_id, user_id, file_id)
+            else:
+                text = (message.get("text") or "").strip().lower()
+                if text in ("/start", "/help"):
+                    await tg.send_message(
+                        chat_id,
+                        "Send a voice message describing your cat food (brand, flavor, best-by date, quantity) to add it to your inventory.",
+                    )
+
+
+if __name__ == "__main__":
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        logger.info("Stopped")
