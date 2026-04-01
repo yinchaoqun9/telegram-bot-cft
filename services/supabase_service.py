@@ -7,8 +7,8 @@ Uses asyncio.to_thread for non-blocking execution (supabase-py is sync).
 
 import asyncio
 import logging
-from datetime import date
-from typing import Any, Dict, List, Optional
+from datetime import date, datetime, timedelta
+from typing import Any, Dict, List, Optional, Tuple
 from uuid import uuid4
 
 from supabase import Client, create_client
@@ -20,6 +20,20 @@ class SupabaseServiceError(Exception):
     """Raised on Supabase operation failures."""
 
     pass
+
+
+def _coerce_best_by_date(value: Any) -> Optional[date]:
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    s = str(value).strip()[:10]
+    try:
+        return date.fromisoformat(s)
+    except ValueError:
+        return None
 
 
 class SupabaseService:
@@ -199,6 +213,103 @@ class SupabaseService:
             logger.exception("Supabase mark reminded error: %s", e)
             raise SupabaseServiceError(f"Failed to mark reminded: {e}") from e
 
+    def _list_telegram_users_sync(self) -> List[Dict[str, Any]]:
+        try:
+            result = (
+                self.client.table("telegram_users")
+                .select("user_id,chat_id")
+                .execute()
+            )
+        except Exception as e:
+            logger.exception("Supabase list telegram_users error: %s", e)
+            raise SupabaseServiceError(f"Failed to list telegram users: {e}") from e
+        return result.data or []
+
+    def _get_digest_buckets_for_user_sync(
+        self, user_id: str, today: date, window_days: int = 15
+    ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+        """
+        Rows with quantity > 0 and today <= best_by <= today+window_days.
+        Split into within_7 (0..7 days) and within_8_15 (8..window_days).
+        """
+        end = today + timedelta(days=window_days)
+        try:
+            inv = (
+                self.client.table("cat_inventory")
+                .select("id,user_id,brand,flavor,best_by,quantity")
+                .eq("user_id", str(user_id))
+                .gt("quantity", 0)
+                .gte("best_by", today.isoformat())
+                .lte("best_by", end.isoformat())
+                .limit(500)
+                .execute()
+            )
+        except Exception as e:
+            logger.exception("Supabase digest query error: %s", e)
+            raise SupabaseServiceError(f"Failed to query digest inventory: {e}") from e
+
+        within_7: List[Dict[str, Any]] = []
+        within_8_15: List[Dict[str, Any]] = []
+        for r in inv.data or []:
+            bd = _coerce_best_by_date(r.get("best_by"))
+            if bd is None:
+                continue
+            days_left = (bd - today).days
+            if days_left < 0:
+                continue
+            if 0 <= days_left <= 7:
+                within_7.append(dict(r))
+            elif 8 <= days_left <= window_days:
+                within_8_15.append(dict(r))
+        return within_7, within_8_15
+
+    def _decrement_item_quantity_sync(
+        self, user_id: str, item_id: str, delta: int = 1
+    ) -> str:
+        """
+        Decrease quantity by delta for row owned by user_id. Delete row if qty <= 0.
+
+        Returns:
+            'deleted' or 'updated'
+
+        Raises:
+            SupabaseServiceError: If row missing or not owned by user.
+        """
+        if delta < 1:
+            raise SupabaseServiceError("Invalid delta")
+        try:
+            current = (
+                self.client.table("cat_inventory")
+                .select("id,user_id,quantity")
+                .eq("id", item_id)
+                .limit(1)
+                .execute()
+            )
+        except Exception as e:
+            logger.exception("Supabase decrement fetch error: %s", e)
+            raise SupabaseServiceError(f"Failed to fetch item: {e}") from e
+
+        row = (current.data or [None])[0]
+        if not row or str(row.get("user_id")) != str(user_id):
+            raise SupabaseServiceError("Item not found")
+
+        qty = int(row.get("quantity") or 0)
+        new_qty = max(0, qty - delta)
+        uid = str(user_id)
+        try:
+            if new_qty <= 0:
+                self.client.table("cat_inventory").delete().eq(
+                    "id", item_id
+                ).eq("user_id", uid).execute()
+                return "deleted"
+            self.client.table("cat_inventory").update({"quantity": new_qty}).eq(
+                "id", item_id
+            ).eq("user_id", uid).execute()
+            return "updated"
+        except Exception as e:
+            logger.exception("Supabase decrement update error: %s", e)
+            raise SupabaseServiceError(f"Failed to update item: {e}") from e
+
     async def insert_inventory_item(
         self,
         user_id: str,
@@ -267,3 +378,20 @@ class SupabaseService:
     async def mark_reminded(self, item_id: str, offset_days: int) -> None:
         """Async wrapper to mark an item as reminded for offset_days."""
         await asyncio.to_thread(self._mark_reminded_sync, item_id, offset_days)
+
+    async def list_telegram_users(self) -> List[Dict[str, Any]]:
+        return await asyncio.to_thread(self._list_telegram_users_sync)
+
+    async def get_digest_buckets_for_user(
+        self, user_id: str, today: date, window_days: int = 15
+    ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+        return await asyncio.to_thread(
+            self._get_digest_buckets_for_user_sync, user_id, today, window_days
+        )
+
+    async def decrement_item_quantity(
+        self, user_id: str, item_id: str, delta: int = 1
+    ) -> str:
+        return await asyncio.to_thread(
+            self._decrement_item_quantity_sync, user_id, item_id, delta
+        )

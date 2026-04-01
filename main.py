@@ -11,7 +11,7 @@ import logging
 import os
 import sys
 from contextlib import asynccontextmanager
-from typing import Optional
+from typing import Optional, Tuple
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, Request, Response
@@ -292,6 +292,82 @@ async def process_voice_message(
         logger.exception("Failed to send confirmation to user: %s", e)
 
 
+async def try_decrement_inventory(user_id: int, item_id: str) -> Tuple[bool, str]:
+    """Decrease quantity by 1 for user's item. Returns (success, user-facing detail)."""
+    tid = (item_id or "").strip()
+    if not tid:
+        return False, "Missing item id."
+    try:
+        status = await get_supabase().decrement_item_quantity(
+            str(user_id), tid, delta=1
+        )
+        if status == "deleted":
+            return True, "Removed from inventory (quantity reached 0)."
+        return True, "Quantity reduced by 1."
+    except SupabaseServiceError as e:
+        msg = str(e) or "Could not update item."
+        return False, msg
+
+
+async def handle_callback_query(callback: dict) -> None:
+    """Inline keyboard: callback_data u:{item_id}."""
+    cq_id = callback.get("id")
+    from_user = callback.get("from") or {}
+    user_id = from_user.get("id")
+    data = (callback.get("data") or "").strip()
+    if not cq_id or not user_id:
+        return
+    tg = get_telegram()
+    if not data.startswith("u:"):
+        try:
+            await tg.answer_callback_query(
+                cq_id, text="Unknown action.", show_alert=True
+            )
+        except Exception:
+            logger.exception("answerCallbackQuery failed")
+        return
+    item_id = data[2:].strip()
+    ok, detail = await try_decrement_inventory(int(user_id), item_id)
+    try:
+        await tg.answer_callback_query(
+            cq_id,
+            text=detail[:200],
+            show_alert=not ok,
+        )
+    except Exception:
+        logger.exception("answerCallbackQuery failed after decrement")
+
+
+async def handle_used_command(chat_id: int, user_id: int, text: str) -> None:
+    """Parse /used <item_id> (supports /used@BotName)."""
+    raw = (text or "").strip()
+    parts = raw.split(maxsplit=1)
+    cmd = parts[0].split("@")[0].lower() if parts else ""
+    if cmd != "/used":
+        return
+    tg = get_telegram()
+    if len(parts) < 2 or not parts[1].strip():
+        try:
+            await tg.send_message(
+                chat_id,
+                "Usage: /used <item_id>\nCopy the id from the daily digest message.",
+                parse_mode=None,
+            )
+        except Exception as e:
+            logger.exception("send_message failed: %s", e)
+        return
+    item_id = parts[1].strip()
+    ok, detail = await try_decrement_inventory(user_id, item_id)
+    try:
+        await tg.send_message(
+            chat_id,
+            detail if ok else f"Could not update: {detail}",
+            parse_mode=None,
+        )
+    except Exception as e:
+        logger.exception("send_message failed: %s", e)
+
+
 async def _voice_pipeline_guarded(chat_id: int, user_id: int, file_id: str) -> None:
     """
     Background tasks from asyncio.create_task() must not leak exceptions:
@@ -337,11 +413,19 @@ async def webhook(request: Request) -> Response:
         list(body.keys()),
     )
 
+    callback = body.get("callback_query")
+    if callback:
+        try:
+            await handle_callback_query(callback)
+        except Exception:
+            logger.exception("handle_callback_query failed")
+        return Response(status_code=200)
+
     # Telegram may send other update types; we only care about messages
     message = body.get("message") or body.get("edited_message")
     if not message:
         logger.info(
-            "Webhook: no message in update (ignored). update_id=%s",
+            "Webhook: no message/callback in update (ignored). update_id=%s",
             body.get("update_id"),
         )
         return Response(status_code=200)
@@ -372,17 +456,27 @@ async def webhook(request: Request) -> Response:
         else:
             logger.warning("Voice message without file_id")
     else:
-        # Non-voice message: help reply
-        text = (message.get("text") or "").strip().lower()
-        if text in ("/start", "/help"):
-            tg = get_telegram()
+        # Non-voice message: commands
+        text_raw = (message.get("text") or "").strip()
+        text_lower = text_raw.lower()
+        cmd0 = text_lower.split(maxsplit=1)[0].split("@")[0] if text_lower else ""
+        tg = get_telegram()
+        if text_lower in ("/start", "/help"):
             try:
                 await tg.send_message(
                     chat_id,
-                    "Send a voice message describing your cat food (brand, flavor, best-by date, quantity) to add it to your inventory.",
+                    "Send a voice message describing your cat food (brand, flavor, best-by date, quantity) to add it to your inventory.\n\n"
+                    "Daily digest lists items expiring soon; tap Used or send:\n"
+                    "/used <item_id>",
+                    parse_mode=None,
                 )
             except Exception as e:
                 logger.exception("Failed to send help message: %s", e)
+        elif cmd0 == "/used":
+            try:
+                await handle_used_command(chat_id, user_id, text_raw)
+            except Exception:
+                logger.exception("handle_used_command failed")
 
     return Response(status_code=200)
 

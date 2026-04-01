@@ -7,7 +7,7 @@ Telegram Service - Handles Telegram Bot API interactions.
 """
 
 import logging
-from typing import Any, Dict, List, Union
+from typing import Any, Dict, List, Optional, Union
 
 import httpx
 
@@ -113,14 +113,20 @@ class TelegramService:
         return await self.download_file(path)
 
     async def send_message(
-        self, chat_id: Union[int, str], text: str
+        self,
+        chat_id: Union[int, str],
+        text: str,
+        reply_markup: Optional[Dict[str, Any]] = None,
+        parse_mode: Optional[str] = "HTML",
     ) -> Dict[str, Any]:
         """
         Send a text message to a chat.
 
         Args:
             chat_id: Telegram chat ID
-            text: Message text (HTML parse_mode)
+            text: Message text
+            reply_markup: Optional Telegram reply_markup (e.g. inline_keyboard)
+            parse_mode: "HTML", "MarkdownV2", or None for plain text
 
         Returns:
             API response data
@@ -130,9 +136,17 @@ class TelegramService:
         """
         async with httpx.AsyncClient(timeout=30.0) as client:
             try:
+                payload: Dict[str, Any] = {
+                    "chat_id": chat_id,
+                    "text": text,
+                }
+                if parse_mode is not None:
+                    payload["parse_mode"] = parse_mode
+                if reply_markup is not None:
+                    payload["reply_markup"] = reply_markup
                 resp = await client.post(
                     f"{self.base_url}/sendMessage",
-                    json={"chat_id": chat_id, "text": text, "parse_mode": "HTML"},
+                    json=payload,
                 )
                 resp.raise_for_status()
                 return resp.json()
@@ -147,6 +161,54 @@ class TelegramService:
             except Exception as e:
                 logger.exception("Unexpected error in send_message: %s", e)
                 raise TelegramServiceError(f"Failed to send message: {e}") from e
+
+    async def send_message_with_inline_keyboard(
+        self,
+        chat_id: Union[int, str],
+        text: str,
+        inline_keyboard: List[List[Dict[str, str]]],
+        parse_mode: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Send message with inline keyboard (each inner list is a button row)."""
+        return await self.send_message(
+            chat_id,
+            text,
+            reply_markup={"inline_keyboard": inline_keyboard},
+            parse_mode=parse_mode,
+        )
+
+    async def answer_callback_query(
+        self,
+        callback_query_id: str,
+        text: Optional[str] = None,
+        show_alert: bool = False,
+    ) -> Dict[str, Any]:
+        """Acknowledge an inline button press (stops loading spinner on client)."""
+        payload: Dict[str, Any] = {"callback_query_id": callback_query_id}
+        if text is not None:
+            payload["text"] = text
+        if show_alert:
+            payload["show_alert"] = True
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            try:
+                resp = await client.post(
+                    f"{self.base_url}/answerCallbackQuery",
+                    json=payload,
+                )
+                resp.raise_for_status()
+                return resp.json()
+            except httpx.HTTPStatusError as e:
+                logger.error(
+                    "Telegram answerCallbackQuery failed: status=%s body=%s",
+                    e.response.status_code,
+                    e.response.text,
+                )
+                raise
+            except Exception as e:
+                logger.exception("Unexpected error in answer_callback_query: %s", e)
+                raise TelegramServiceError(
+                    f"Failed to answer callback query: {e}"
+                ) from e
 
     async def send_error_message(
         self, chat_id: Union[int, str], error: str

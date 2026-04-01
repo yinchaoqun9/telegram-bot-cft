@@ -9,6 +9,7 @@ Production-ready Telegram bot backend that processes voice notes, **transcribes*
 - **Structured extraction**: **Gemini** JSON extraction by default, falls back to **GPT**; brand strings are then matched to a **local brand map** (`rapidfuzz`)
 - **Supabase storage**: Inserts into `cat_inventory` table
 - **User confirmation**: Sends confirmation message back to the user
+- **Expiry digest**: Daily job groups items expiring in **0–7 days** and **8–15 days** (configurable window); inline **Used** buttons or `/used <item_id>` decrease quantity (row deleted at 0)
 
 ## Project Structure
 
@@ -25,6 +26,7 @@ telegram-bot/
 │   ├── openai_service.py   # Whisper + GPT
 │   ├── supabase_service.py # Database operations
 │   └── telegram_service.py # Telegram API (download, send)
+├── send_reminders.py       # Daily cron: digest + optional inline keyboards
 ├── requirements.txt
 ├── .env.example
 └── README.md
@@ -47,7 +49,7 @@ CREATE TABLE cat_inventory (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- Track which reminder offsets have been sent (e.g. 7,3,1)
+-- Legacy: older per-offset reminders; digest job no longer writes this
 ALTER TABLE cat_inventory
   ADD COLUMN IF NOT EXISTS reminded_offsets INT[] NOT NULL DEFAULT '{}';
 
@@ -87,6 +89,8 @@ Copy `.env.example` to `.env` and fill in:
 - `SUPABASE_URL` - Supabase project URL
 - `SUPABASE_SERVICE_KEY` - Supabase service role key (not anon key)
 - `TELEGRAM_BOT_TOKEN` - From @BotFather
+- `REMINDER_MAX_DAYS` - Upper bound for the “8–N days” digest section (default `15`, minimum effective window is 7)
+- `REMINDER_DIGEST_MAX_BUTTONS` - Max inline **Used** buttons per digest message (default `18`)
 
 ### Brand catalog format
 
@@ -175,6 +179,20 @@ Saved 2 items:
 - You do **not** need to say explicit keywords like “brand” / “flavor”; they just make it a bit more robust.
 - Dates in any language are fine; the bot will try to normalize them to `YYYY-MM-DD`.
 
+### Expiry digest and marking items used
+
+Schedule [`send_reminders.py`](telegram-bot/send_reminders.py) **once per day** (Railway Cron or other scheduler) with the same `SUPABASE_*` and `TELEGRAM_BOT_TOKEN` as the bot. Each user with a `telegram_users` row receives **one message** listing:
+
+- **Expiring within 7 days** (`today` through `today+7`)
+- **Expiring in 8–N days** (`today+8` through `today+N`, default N=15)
+
+Items already past `best_by` are not listed. Set **`TZ`** (e.g. `Asia/Shanghai`) on the job environment so `date.today()` matches your local calendar.
+
+- Tap **Used −1** on a line to decrease quantity by 1; at **0** the row is **deleted**.
+- Or send **`/used <item_id>`** (UUID shown under each item in the digest).
+
+The main bot webhook must stay deployed so callbacks and `/used` reach the server.
+
 ## API Endpoints
 
 - `POST /webhook` - Telegram webhook (receives updates)
@@ -237,6 +255,6 @@ Use a **single-line** URL (no line breaks inside the quotes).
 - Install **ffmpeg** on the server for OGG→MP3 conversion (Telegram voice format)
 - All I/O is async (Telegram, OpenAI, Supabase) for non-blocking performance
 - Voice processing runs in background task; webhook returns 200 quickly to avoid Telegram timeout
-- For private-chat reminders, run `send_reminders.py` daily (cron/cloud scheduler) and ensure `telegram_users` + `reminded_offsets` are created in Supabase
+- For expiry digests, run `send_reminders.py` daily (second Railway service or cron) with `SUPABASE_*`, `TELEGRAM_BOT_TOKEN`, and recommended **`TZ`**; ensure `telegram_users` exists and users have messaged the bot so `chat_id` is stored. **Public networking is not required** for that job (outbound-only)
 - Use `SUPABASE_SERVICE_KEY` (service role) for backend; never expose it to the client
 - Set `ENV=production` in production for non-reload mode

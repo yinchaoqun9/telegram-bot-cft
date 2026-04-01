@@ -36,9 +36,13 @@ logging.getLogger("openai._base_client").setLevel(logging.WARNING)
 
 
 async def main() -> None:
-    from main import process_voice_message
+    from main import (
+        get_supabase,
+        handle_callback_query,
+        handle_used_command,
+        process_voice_message,
+    )
     from services.telegram_service import TelegramService, TelegramServiceError
-    from main import get_supabase
 
     token = os.environ.get("TELEGRAM_BOT_TOKEN")
     if not token:
@@ -68,6 +72,14 @@ async def main() -> None:
         for update in updates:
             offset = update["update_id"] + 1
 
+            cq = update.get("callback_query")
+            if cq:
+                try:
+                    await handle_callback_query(cq)
+                except Exception:
+                    logger.exception("callback_query handling failed (polling)")
+                continue
+
             message = update.get("message") or update.get("edited_message")
             if not message:
                 continue
@@ -92,12 +104,21 @@ async def main() -> None:
                 if file_id:
                     await process_voice_message(chat_id, user_id, file_id)
             else:
-                text = (message.get("text") or "").strip().lower()
-                if text in ("/start", "/help"):
+                text_raw = (message.get("text") or "").strip()
+                text_lower = text_raw.lower()
+                cmd0 = (
+                    text_lower.split(maxsplit=1)[0].split("@")[0] if text_lower else ""
+                )
+                if text_lower in ("/start", "/help"):
                     await tg.send_message(
                         chat_id,
-                        "Send a voice message describing your cat food (brand, flavor, best-by date, quantity) to add it to your inventory.",
+                        "Send a voice message describing your cat food (brand, flavor, best-by date, quantity) to add it to your inventory.\n\n"
+                        "Daily digest lists items expiring soon; tap Used or send:\n"
+                        "/used <item_id>",
+                        parse_mode=None,
                     )
+                elif cmd0 == "/used":
+                    await handle_used_command(chat_id, user_id, text_raw)
 
 
 if __name__ == "__main__":
