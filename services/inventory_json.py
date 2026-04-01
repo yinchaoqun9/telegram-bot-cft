@@ -5,9 +5,48 @@ Shared by OpenAI and Gemini extractors to avoid duplication.
 
 import json
 import logging
+import re
 from typing import Any, Dict, List
 
 logger = logging.getLogger(__name__)
+
+
+def _strip_code_fences(text: str) -> str:
+    """Remove ``` / ```json wrappers if present."""
+    t = text.strip()
+    if "```" not in t:
+        return t
+    m = re.search(r"```(?:json)?\s*\n?([\s\S]*?)```", t, re.IGNORECASE)
+    if m:
+        return m.group(1).strip()
+    lines = [ln for ln in t.split("\n") if not ln.strip().startswith("```")]
+    return "\n".join(lines).strip()
+
+
+def _load_json_lenient(text: str) -> Any:
+    """
+    Parse JSON; on failure, find first top-level JSON array or object in text.
+
+    Handles models that add a short preamble (e.g. 'Here is the JSON:').
+    No extra API calls.
+    """
+    text = text.strip()
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError as first_err:
+        dec = json.JSONDecoder()
+        for i, c in enumerate(text):
+            if c not in "[{":
+                continue
+            try:
+                obj, _end = dec.raw_decode(text[i:])
+                return obj
+            except json.JSONDecodeError:
+                continue
+        logger.error("Invalid JSON from model: %s", text[:300])
+        raise ValueError(
+            f"Failed to parse model response as JSON: {first_err}"
+        ) from first_err
 
 
 def parse_inventory_items_from_llm_text(content: str) -> List[Dict[str, Any]]:
@@ -20,18 +59,8 @@ def parse_inventory_items_from_llm_text(content: str) -> List[Dict[str, Any]]:
     if not content or not content.strip():
         raise ValueError("Empty model content")
 
-    text = content.strip()
-    if text.startswith("```"):
-        lines = text.split("\n")
-        text = "\n".join(
-            line for line in lines if not line.strip().startswith("```")
-        )
-
-    try:
-        data = json.loads(text)
-    except json.JSONDecodeError as e:
-        logger.error("Invalid JSON from model: %s", text[:200])
-        raise ValueError(f"Failed to parse model response as JSON: {e}") from e
+    text = _strip_code_fences(content.strip())
+    data = _load_json_lenient(text)
 
     if isinstance(data, dict) and "items" in data:
         data = data["items"]
@@ -43,15 +72,15 @@ def parse_inventory_items_from_llm_text(content: str) -> List[Dict[str, Any]]:
         logger.error("Model returned unsupported structure: %s", type(data))
         raise ValueError("Expected a JSON array or an object with 'items' key.")
 
-    required = {"brand", "flavor", "best_by", "quantity"}
     items: List[Dict[str, Any]] = []
     for idx, raw in enumerate(data):
         if not isinstance(raw, dict):
             logger.warning("Skipping non-object item at index %d: %r", idx, raw)
             continue
 
-        if not required.issubset(raw.keys()):
-            logger.warning("Item %d missing keys. Got: %s", idx, list(raw.keys()))
+        keys = set(raw.keys())
+        if not {"brand", "flavor", "best_by", "quantity"}.issubset(keys):
+            logger.warning("Item %d missing keys. Got: %s", idx, list(keys))
 
         items.append(
             {

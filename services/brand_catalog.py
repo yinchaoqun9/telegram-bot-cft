@@ -99,7 +99,8 @@ def get_brand_catalog() -> BrandCatalog:
     """Singleton catalog (lazy)."""
     global _catalog
     if _catalog is None:
-        cutoff = int(os.environ.get("BRAND_MATCH_THRESHOLD", "85"))
+        # Default 80: one-letter ASR/LLM typos (e.g. akana/acana) often sit 80–84 WRatio
+        cutoff = int(os.environ.get("BRAND_MATCH_THRESHOLD", "80"))
         path = os.environ.get("BRAND_MAP_PATH")
         _catalog = BrandCatalog(data_path=path, score_cutoff=cutoff)
     return _catalog

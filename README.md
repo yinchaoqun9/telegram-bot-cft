@@ -85,7 +85,7 @@ Copy `.env.example` to `.env` and fill in:
 - `AI_TRANSCRIBE_PROVIDER` - `gemini` (default) or `openai`
 - `AI_EXTRACT_PROVIDER` - `gemini` (default) or `openai`
 - `BRAND_MAP_PATH` - Optional path to brand JSON; default `data/cat_food_brands.json` under the app
-- `BRAND_MATCH_THRESHOLD` - `rapidfuzz` ratio 0–100; below this, the model’s brand string is kept unchanged (default `85`)
+- `BRAND_MATCH_THRESHOLD` - `rapidfuzz` ratio 0–100; below this, the model’s brand string is kept unchanged (default `80`, slightly more tolerant of one-letter ASR/LLM typos)
 - `SUPABASE_URL` - Supabase project URL
 - `SUPABASE_SERVICE_KEY` - Supabase service role key (not anon key)
 - `TELEGRAM_BOT_TOKEN` - From @BotFather

@@ -38,12 +38,18 @@ OUTPUT FORMAT (VERY IMPORTANT):
 - No extra keys, no wrapper object, no explanations, no markdown.
 
 INTERPRETATION RULES:
-- brand: the cat food brand name (e.g. "Royal Canin", "Fancy Feast").
-- flavor: flavor or variant, usually near the brand (e.g. "chicken", "salmon").
+- brand: the cat food BRAND name. Users rarely say the English word "brand".
+  Infer brand from ANY product name the speaker gives (e.g. "Acana salmon",
+  "两罐渴望" -> brand Acana / Orijen). If the utterance clearly refers to a
+  commercial cat food name, put it in "brand" even if phrasing is informal.
+  Only use null if there is truly no brand-like name in the transcript.
+- flavor: flavor or variant (e.g. "chicken", "salmon", "鸡肉"). If the only
+  specific name sounds like a brand, put it in "brand", not "flavor".
 - best_by: expiration or best-by date; normalize to YYYY-MM-DD when possible.
 - quantity: number of units (cans/bags/etc.), convert words like "two" or "两"
   into an integer.
-- If you are unsure about a field, set it to null.
+- If you are unsure about a field, set it to null — except prefer a reasonable
+  guess for "brand" when a product name was clearly spoken.
 
 MULTI-ITEM EXAMPLES (conceptual):
 - Chinese:
@@ -55,6 +61,9 @@ MULTI-ITEM EXAMPLES (conceptual):
   "I have two cans of Fancy Feast chicken, best by June 1st 2025,
    and three cans of Purina salmon, same best by date."
   -> two array elements.
+
+STRICT OUTPUT:
+- No markdown fences (no ```), no comments, no text before or after the JSON.
 
 Again: return ONLY a JSON array of item objects, nothing else."""
 
