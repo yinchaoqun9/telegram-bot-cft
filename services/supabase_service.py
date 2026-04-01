@@ -310,6 +310,34 @@ class SupabaseService:
             logger.exception("Supabase decrement update error: %s", e)
             raise SupabaseServiceError(f"Failed to update item: {e}") from e
 
+    def _delete_inventory_item_sync(self, user_id: str, item_id: str) -> None:
+        """Delete a row if owned by user_id."""
+        uid = str(user_id)
+        tid = (item_id or "").strip()
+        if not tid:
+            raise SupabaseServiceError("Item not found")
+        try:
+            cur = (
+                self.client.table("cat_inventory")
+                .select("id")
+                .eq("id", tid)
+                .eq("user_id", uid)
+                .limit(1)
+                .execute()
+            )
+        except Exception as e:
+            logger.exception("Supabase delete fetch error: %s", e)
+            raise SupabaseServiceError(f"Failed to fetch item: {e}") from e
+        if not (cur.data or []):
+            raise SupabaseServiceError("Item not found")
+        try:
+            self.client.table("cat_inventory").delete().eq("id", tid).eq(
+                "user_id", uid
+            ).execute()
+        except Exception as e:
+            logger.exception("Supabase delete error: %s", e)
+            raise SupabaseServiceError(f"Failed to delete item: {e}") from e
+
     async def insert_inventory_item(
         self,
         user_id: str,
@@ -395,3 +423,6 @@ class SupabaseService:
         return await asyncio.to_thread(
             self._decrement_item_quantity_sync, user_id, item_id, delta
         )
+
+    async def delete_inventory_item(self, user_id: str, item_id: str) -> None:
+        await asyncio.to_thread(self._delete_inventory_item_sync, user_id, item_id)

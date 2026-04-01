@@ -236,30 +236,45 @@ class TelegramService:
     async def send_saved_confirmation_multi(
         self,
         chat_id: Union[int, str],
-        items: List[Dict[str, Any]],
+        saved_rows: List[Dict[str, Any]],
     ) -> None:
         """
-        Send confirmation for one or more saved inventory items.
-
-        - If only one item, use the single-item format.
-        - If multiple, send a summary list.
+        Send confirmation for saved rows (must include Supabase `id` per row).
+        Adds inline Delete buttons (callback_data d:{uuid}).
         """
-        if not items:
+        if not saved_rows:
             return
 
-        if len(items) == 1:
-            item = items[0]
-            await self.send_saved_confirmation(
-                chat_id,
-                item.get("brand", "") or "",
-                item.get("flavor", "") or "",
-                item.get("best_by", "") or "",
-                int(item.get("quantity") or 0),
+        footer = "\n\nUse Delete below to remove a mistaken entry."
+
+        def _row_keyboard(rows: List[Dict[str, Any]]) -> List[List[Dict[str, str]]]:
+            kb: List[List[Dict[str, str]]] = []
+            for idx, row in enumerate(rows):
+                iid = str(row.get("id") or "").strip()
+                if not iid or len(f"d:{iid}".encode("utf-8")) > 64:
+                    continue
+                label = "Delete" if len(rows) == 1 else f"Delete #{idx + 1}"
+                kb.append([{"text": label, "callback_data": f"d:{iid}"}])
+            return kb
+
+        if len(saved_rows) == 1:
+            item = saved_rows[0]
+            msg = (
+                f"Saved: {item.get('brand', '') or ''} {item.get('flavor', '') or ''}, "
+                f"expires {item.get('best_by', '') or ''}, quantity {int(item.get('quantity') or 0)}"
             )
+            msg += footer
+            kb = _row_keyboard(saved_rows)
+            if kb:
+                await self.send_message_with_inline_keyboard(
+                    chat_id, msg, kb, parse_mode=None
+                )
+            else:
+                await self.send_message(chat_id, msg, parse_mode=None)
             return
 
         lines = []
-        for idx, item in enumerate(items, start=1):
+        for idx, item in enumerate(saved_rows, start=1):
             brand = item.get("brand", "") or ""
             flavor = item.get("flavor", "") or ""
             best_by = item.get("best_by", "") or ""
@@ -268,11 +283,18 @@ class TelegramService:
                 f"{idx}) {brand} {flavor}, expires {best_by}, quantity {qty}"
             )
 
-        msg = "Saved {count} items:\n{items}".format(
-            count=len(items),
+        msg = "Saved {count} items:\n{items}{footer}".format(
+            count=len(saved_rows),
             items="\n".join(lines),
+            footer=footer,
         )
-        await self.send_message(chat_id, msg)
+        kb = _row_keyboard(saved_rows)
+        if kb:
+            await self.send_message_with_inline_keyboard(
+                chat_id, msg, kb, parse_mode=None
+            )
+        else:
+            await self.send_message(chat_id, msg, parse_mode=None)
 
     async def delete_webhook(self) -> bool:
         """Remove webhook so getUpdates can be used (for local polling)."""

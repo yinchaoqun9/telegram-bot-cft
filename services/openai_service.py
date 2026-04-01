@@ -40,9 +40,10 @@ OUTPUT FORMAT (VERY IMPORTANT):
 INTERPRETATION RULES:
 - brand: the cat food BRAND name. Users rarely say the English word "brand".
   Infer brand from ANY product name the speaker gives (e.g. "Acana salmon",
-  "两罐渴望" -> brand Acana / Orijen). If the utterance clearly refers to a
-  commercial cat food name, put it in "brand" even if phrasing is informal.
-  Only use null if there is truly no brand-like name in the transcript.
+  "两罐渴望" -> brand Acana / Orijen). For small/regional/niche brands (e.g.
+  Chinese or Japanese names like 丸味), copy the brand EXACTLY as spoken in
+  the transcript into "brand" — do NOT omit or replace with null just because
+  the name is uncommon. Only use null if there is truly no brand-like name.
 - flavor: flavor or variant (e.g. "chicken", "salmon", "鸡肉"). If the only
   specific name sounds like a brand, put it in "brand", not "flavor".
 - best_by: expiration or best-by date; normalize to YYYY-MM-DD when possible.

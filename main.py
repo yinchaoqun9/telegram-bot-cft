@@ -18,6 +18,7 @@ from fastapi import FastAPI, Request, Response
 
 from services.ai_pipeline import extract_preferred, transcribe_preferred
 from services.brand_catalog import get_brand_catalog
+from services.debug_agent_log import debug_agent_log
 from services.gemini_service import GeminiService, GeminiServiceError
 from services.openai_service import OpenAIService, OpenAIServiceError
 from services.supabase_service import SupabaseService, SupabaseServiceError
@@ -208,12 +209,33 @@ async def process_voice_message(
         )
         return
 
+    # #region agent log
+    _tsnip = transcription.strip()
+    debug_agent_log(
+        "H1",
+        "main.py:process_voice_message",
+        "transcription_ok",
+        {
+            "transcription_len": len(_tsnip),
+            "transcription_preview": _tsnip[:120],
+        },
+    )
+    # #endregion
+
     # 3. Extract structured data (Gemini preferred, else GPT) - may return multiple items
     try:
         raw_items = await extract_preferred(
             transcription, openai_svc, gemini_svc
         )
     except ValueError as e:
+        # #region agent log
+        debug_agent_log(
+            "H4",
+            "main.py:process_voice_message",
+            "extract_value_error",
+            {"error_type": type(e).__name__, "error_msg": str(e)[:300]},
+        )
+        # #endregion
         logger.warning("LLM extraction failed: %s", e)
         await tg.send_error_message(chat_id, str(e))
         return
@@ -224,13 +246,32 @@ async def process_voice_message(
         )
         return
 
+    # #region agent log
+    _brands_from_model = [
+        (raw.get("brand") if isinstance(raw, dict) else None) for raw in raw_items
+    ]
+    debug_agent_log(
+        "H2",
+        "main.py:process_voice_message",
+        "raw_items_after_extract",
+        {
+            "raw_count": len(raw_items),
+            "brand_fields": [str(b)[:80] if b is not None else None for b in _brands_from_model],
+        },
+    )
+    # #endregion
+
     # Normalize items (types and empty filtering)
     items = []
+    _brand_trace: list = []
     for raw in raw_items:
         brand_raw = (
             str(raw.get("brand")) if raw.get("brand") is not None else ""
         ).strip()
         brand = brand_cat.normalize_brand(brand_raw)
+        _brand_trace.append(
+            {"brand_raw": brand_raw[:80], "brand_normalized": (brand or "")[:80]}
+        )
         flavor = (
             str(raw.get("flavor")) if raw.get("flavor") is not None else ""
         ).strip()
@@ -255,7 +296,30 @@ async def process_voice_message(
             }
         )
 
+    # #region agent log
+    debug_agent_log(
+        "H5",
+        "main.py:process_voice_message",
+        "brand_normalize_summary",
+        {
+            "catalog_choice_count": brand_cat.choice_count(),
+            "pairs": _brand_trace,
+        },
+    )
+    # #endregion
+
     if not items:
+        # #region agent log
+        debug_agent_log(
+            "H3",
+            "main.py:process_voice_message",
+            "all_items_filtered_empty",
+            {
+                "raw_items_count": len(raw_items),
+                "note": "brand flavor best_by quantity all empty after normalize",
+            },
+        )
+        # #endregion
         await tg.send_error_message(
             chat_id,
             "Could not find any inventory items in your message. Please try again.",
@@ -264,7 +328,7 @@ async def process_voice_message(
 
     # 4. Insert into Supabase (async via thread pool) - batch insert
     try:
-        await supabase_svc.insert_inventory_items(
+        inserted_rows = await supabase_svc.insert_inventory_items(
             user_id=str(user_id),
             items=items,
         )
@@ -279,9 +343,9 @@ async def process_voice_message(
         await tg.send_error_message(chat_id, "Database error. Please try again later.")
         return
 
-    # 5. Confirm to user (async) - handles single or multiple items
+    # 5. Confirm to user (async) - handles single or multiple items + delete buttons
     try:
-        await tg.send_saved_confirmation_multi(chat_id, items)
+        await tg.send_saved_confirmation_multi(chat_id, inserted_rows)
         logger.info(
             "Successfully processed %d items for user=%s chat=%s",
             len(items),
@@ -290,6 +354,18 @@ async def process_voice_message(
         )
     except Exception as e:
         logger.exception("Failed to send confirmation to user: %s", e)
+
+
+async def try_delete_saved_row(user_id: int, item_id: str) -> Tuple[bool, str]:
+    """Delete entire inventory row (undo mistaken save)."""
+    tid = (item_id or "").strip()
+    if not tid:
+        return False, "Missing item id."
+    try:
+        await get_supabase().delete_inventory_item(str(user_id), tid)
+        return True, "Entry deleted."
+    except SupabaseServiceError as e:
+        return False, str(e) or "Could not delete."
 
 
 async def try_decrement_inventory(user_id: int, item_id: str) -> Tuple[bool, str]:
@@ -310,7 +386,7 @@ async def try_decrement_inventory(user_id: int, item_id: str) -> Tuple[bool, str
 
 
 async def handle_callback_query(callback: dict) -> None:
-    """Inline keyboard: callback_data u:{item_id}."""
+    """Inline keyboard: d:{item_id} delete row; u:{item_id} decrement qty."""
     cq_id = callback.get("id")
     from_user = callback.get("from") or {}
     user_id = from_user.get("id")
@@ -318,24 +394,36 @@ async def handle_callback_query(callback: dict) -> None:
     if not cq_id or not user_id:
         return
     tg = get_telegram()
-    if not data.startswith("u:"):
+    if data.startswith("d:"):
+        item_id = data[2:].strip()
+        ok, detail = await try_delete_saved_row(int(user_id), item_id)
         try:
             await tg.answer_callback_query(
-                cq_id, text="Unknown action.", show_alert=True
+                cq_id,
+                text=detail[:200],
+                show_alert=not ok,
             )
         except Exception:
-            logger.exception("answerCallbackQuery failed")
+            logger.exception("answerCallbackQuery failed after delete")
         return
-    item_id = data[2:].strip()
-    ok, detail = await try_decrement_inventory(int(user_id), item_id)
+    if data.startswith("u:"):
+        item_id = data[2:].strip()
+        ok, detail = await try_decrement_inventory(int(user_id), item_id)
+        try:
+            await tg.answer_callback_query(
+                cq_id,
+                text=detail[:200],
+                show_alert=not ok,
+            )
+        except Exception:
+            logger.exception("answerCallbackQuery failed after decrement")
+        return
     try:
         await tg.answer_callback_query(
-            cq_id,
-            text=detail[:200],
-            show_alert=not ok,
+            cq_id, text="Unknown action.", show_alert=True
         )
     except Exception:
-        logger.exception("answerCallbackQuery failed after decrement")
+        logger.exception("answerCallbackQuery failed")
 
 
 async def handle_used_command(chat_id: int, user_id: int, text: str) -> None:
@@ -466,8 +554,8 @@ async def webhook(request: Request) -> Response:
                 await tg.send_message(
                     chat_id,
                     "Send a voice message describing your cat food (brand, flavor, best-by date, quantity) to add it to your inventory.\n\n"
-                    "Daily digest lists items expiring soon; tap Used or send:\n"
-                    "/used <item_id>",
+                    "After saving, use Delete under the confirmation to remove a wrong row.\n"
+                    "Daily digest: tap Used or /used <item_id>.",
                     parse_mode=None,
                 )
             except Exception as e:

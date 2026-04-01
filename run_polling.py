@@ -113,8 +113,8 @@ async def main() -> None:
                     await tg.send_message(
                         chat_id,
                         "Send a voice message describing your cat food (brand, flavor, best-by date, quantity) to add it to your inventory.\n\n"
-                        "Daily digest lists items expiring soon; tap Used or send:\n"
-                        "/used <item_id>",
+                        "After saving, use Delete under the confirmation to remove a wrong row.\n"
+                        "Daily digest: tap Used or /used <item_id>.",
                         parse_mode=None,
                     )
                 elif cmd0 == "/used":

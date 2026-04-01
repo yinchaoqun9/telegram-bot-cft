@@ -61,6 +61,10 @@ class BrandCatalog:
 
         logger.info("Brand catalog loaded: %d match strings -> %d entries", len(self._choices), len(rows))
 
+    def choice_count(self) -> int:
+        """Number of indexed labels (for diagnostics)."""
+        return len(self._choices)
+
     def normalize_brand(self, spoken: str) -> str:
         """
         Map a rough brand string to canonical name if fuzzy score >= cutoff.
