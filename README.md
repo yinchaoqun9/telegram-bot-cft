@@ -177,6 +177,29 @@ curl "https://api.telegram.org/bot<YOUR_BOT_TOKEN>/setWebhook?url=https://<your-
 
 Use a **single-line** URL (no line breaks inside the quotes).
 
+### If Telegram never replies and Railway shows no runtime logs
+
+1. Open the **same Railway service** that runs `uvicorn` (not the Cron job, not Build logs). Use **Deployments → latest → Logs** (runtime / HTTP), not only **Build logs**.
+2. Ensure **Public Networking** is on and you have a **Railway-generated domain** (or custom domain) for that service.
+3. From your laptop, run (replace the host):
+
+   ```bash
+   curl -sS "https://YOUR-RAILWAY-DOMAIN/health"
+   curl -sS "https://YOUR-RAILWAY-DOMAIN/"
+   ```
+
+   You should see JSON and, in Railway runtime logs, lines like `GET /health` and `HTTP GET /health`.
+
+4. Confirm Telegram is calling **this** URL (must end with `/webhook`):
+
+   ```bash
+   curl -sS "https://api.telegram.org/bot<YOUR_BOT_TOKEN>/getWebhookInfo"
+   ```
+
+   Check `url` matches your Railway domain and read `last_error_message` if any.
+
+5. If `getWebhookInfo.url` is empty or points elsewhere, set webhook again (single-line `curl`).
+
 ## Production Notes
 
 - Use HTTPS for the webhook URL (required by Telegram)

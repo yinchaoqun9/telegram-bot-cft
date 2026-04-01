@@ -9,6 +9,7 @@ Uses async throughout for non-blocking I/O.
 import asyncio
 import logging
 import os
+import sys
 from contextlib import asynccontextmanager
 from typing import Optional
 
@@ -22,10 +23,12 @@ from services.telegram_service import TelegramService, TelegramServiceError
 # Load environment variables
 load_dotenv()
 
-# Configure logging
+# Configure logging (stdout so Railway runtime logs always capture it)
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    handlers=[logging.StreamHandler(sys.stdout)],
+    force=True,
 )
 logger = logging.getLogger(__name__)
 
@@ -77,6 +80,8 @@ def get_telegram() -> TelegramService:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Startup: validate env vars. Shutdown: nothing to clean."""
+    port = os.environ.get("PORT", "8000")
+    logger.info("Application starting (PORT=%s)", port)
     try:
         get_openai()
         get_supabase()
@@ -93,6 +98,14 @@ app = FastAPI(
     version="1.0.0",
     lifespan=lifespan,
 )
+
+
+@app.middleware("http")
+async def log_incoming_http(request: Request, call_next):
+    """Log every HTTP request (proves traffic reaches this Railway service)."""
+    logger.info("HTTP %s %s", request.method, request.url.path)
+    response = await call_next(request)
+    return response
 
 
 async def process_voice_message(
@@ -246,22 +259,58 @@ async def process_voice_message(
         logger.exception("Failed to send confirmation to user: %s", e)
 
 
+async def _voice_pipeline_guarded(chat_id: int, user_id: int, file_id: str) -> None:
+    """
+    Background tasks from asyncio.create_task() must not leak exceptions:
+    otherwise uvicorn may only log 'Task exception was never retrieved' and
+    the user gets no Telegram reply — easy to miss in Railway logs.
+    """
+    try:
+        await process_voice_message(chat_id, user_id, file_id)
+    except Exception:
+        logger.exception(
+            "Background voice pipeline crashed (chat_id=%s user_id=%s)",
+            chat_id,
+            user_id,
+        )
+        try:
+            await get_telegram().send_error_message(
+                chat_id,
+                "Something went wrong while processing your voice. Please try again.",
+            )
+        except Exception:
+            logger.exception(
+                "Could not send error message after pipeline crash (chat_id=%s)",
+                chat_id,
+            )
+
+
 @app.post("/webhook")
 async def webhook(request: Request) -> Response:
     """
     Telegram webhook endpoint. Receives updates and processes voice messages.
     Returns 200 quickly; processing runs async to avoid Telegram timeout.
     """
+    logger.info("Webhook POST body read start")
     try:
         body = await request.json()
     except Exception as e:
         logger.warning("Invalid webhook body (not JSON): %s", e)
         return Response(status_code=400)
 
+    logger.info(
+        "Webhook parsed update_id=%s keys=%s",
+        body.get("update_id"),
+        list(body.keys()),
+    )
+
     # Telegram may send other update types; we only care about messages
     message = body.get("message") or body.get("edited_message")
     if not message:
-        logger.debug("Ignoring non-message update type")
+        logger.info(
+            "Webhook: no message in update (ignored). update_id=%s",
+            body.get("update_id"),
+        )
         return Response(status_code=200)
 
     chat_id = message.get("chat", {}).get("id")
@@ -283,7 +332,9 @@ async def webhook(request: Request) -> Response:
         if file_id:
             # Process in background to respond to Telegram within timeout
             # Telegram expects webhook response within ~60s
-            asyncio.create_task(process_voice_message(chat_id, user_id, file_id))
+            asyncio.create_task(
+                _voice_pipeline_guarded(chat_id, user_id, file_id)
+            )
             logger.info("Queued voice processing for chat_id=%s user_id=%s", chat_id, user_id)
         else:
             logger.warning("Voice message without file_id")
@@ -306,7 +357,14 @@ async def webhook(request: Request) -> Response:
 @app.get("/health")
 async def health() -> dict:
     """Health check for load balancers and monitoring."""
+    logger.info("GET /health")
     return {"status": "ok"}
+
+
+@app.get("/")
+async def root() -> dict:
+    """Quick sanity check that the public URL hits this app."""
+    return {"ok": True, "service": "telegram-bot-cft"}
 
 
 if __name__ == "__main__":

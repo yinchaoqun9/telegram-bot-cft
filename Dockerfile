@@ -13,6 +13,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 
 ENV PORT=8000
+# Ensure logs appear immediately in Railway "Deploy" / runtime logs (no stdout buffering)
+ENV PYTHONUNBUFFERED=1
 EXPOSE 8000
 
-CMD sh -c 'uvicorn main:app --host 0.0.0.0 --port "${PORT:-8000}"'
+# Access log: confirms Telegram (and health checks) are hitting this process
+CMD sh -c 'uvicorn main:app --host 0.0.0.0 --port "${PORT:-8000}" --proxy-headers --forwarded-allow-ips="*" --log-level info --access-log'
