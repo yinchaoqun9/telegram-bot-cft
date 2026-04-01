@@ -157,13 +157,15 @@ Telegram voice is OGG/Opus; this app converts to MP3 with **pydub**, which needs
 
 **Option A (recommended): Dockerfile**
 
-The repo includes a `Dockerfile` that installs `ffmpeg`. In Railway, set the service to build with Docker (Railway auto-detects `Dockerfile` when present) and use start command:
+The repo includes a `Dockerfile` that installs `ffmpeg`. In Railway, set the service to build with Docker (Railway auto-detects `Dockerfile` when present).
 
-```bash
-sh -c 'uvicorn main:app --host 0.0.0.0 --port "${PORT:-8000}"'
-```
+**Important:** In Railway → your service → **Settings → Deploy → Custom Start Command**, leave it **empty** so the image `CMD` runs. If you set e.g. `uvicorn ... --port $PORT` without a shell, Railway may pass the literal string `$PORT` to uvicorn, which crashes with:
 
-(The `Dockerfile` `CMD` already does this; you can leave Railway’s start command empty if it uses the image default.)
+`Invalid value for '--port': '$PORT' is not a valid integer`
+
+and Telegram webhooks will show **502**.
+
+The `Dockerfile` `CMD` uses `sh -c` so `${PORT:-8000}` expands correctly at runtime.
 
 **Option B: Nixpacks without Docker**
 
