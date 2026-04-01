@@ -16,6 +16,9 @@ from typing import Optional
 from dotenv import load_dotenv
 from fastapi import FastAPI, Request, Response
 
+from services.ai_pipeline import extract_preferred, transcribe_preferred
+from services.brand_catalog import get_brand_catalog
+from services.gemini_service import GeminiService, GeminiServiceError
 from services.openai_service import OpenAIService, OpenAIServiceError
 from services.supabase_service import SupabaseService, SupabaseServiceError
 from services.telegram_service import TelegramService, TelegramServiceError
@@ -39,6 +42,8 @@ logging.getLogger("openai._base_client").setLevel(logging.WARNING)
 
 # Initialize services (lazy - will fail fast on first request if misconfigured)
 _openai: Optional[OpenAIService] = None
+_gemini: Optional[GeminiService] = None
+_gemini_initialized: bool = False
 _supabase: Optional[SupabaseService] = None
 _telegram: Optional[TelegramService] = None
 
@@ -52,6 +57,20 @@ def get_openai() -> OpenAIService:
             raise RuntimeError("OPENAI_API_KEY not set")
         _openai = OpenAIService(api_key=key)
     return _openai
+
+
+def get_gemini() -> Optional[GeminiService]:
+    """Optional Gemini client when GEMINI_API_KEY is set."""
+    global _gemini, _gemini_initialized
+    if _gemini_initialized:
+        return _gemini
+    _gemini_initialized = True
+    key = os.environ.get("GEMINI_API_KEY", "").strip()
+    if not key:
+        return None
+    model = os.environ.get("GEMINI_MODEL", "gemini-2.0-flash").strip()
+    _gemini = GeminiService(api_key=key, model=model)
+    return _gemini
 
 
 def get_supabase() -> SupabaseService:
@@ -86,6 +105,10 @@ async def lifespan(app: FastAPI):
         get_openai()
         get_supabase()
         get_telegram()
+        g = get_gemini()
+        if g:
+            logger.info("Gemini enabled (model=%s)", os.environ.get("GEMINI_MODEL", "gemini-2.0-flash"))
+        get_brand_catalog()
         logger.info("All services initialized successfully")
     except RuntimeError as e:
         logger.warning("Service init warning (may fail at first request): %s", e)
@@ -117,7 +140,9 @@ async def process_voice_message(
     """
     tg = get_telegram()
     openai_svc = get_openai()
+    gemini_svc = get_gemini()
     supabase_svc = get_supabase()
+    brand_cat = get_brand_catalog()
 
     # Persist user -> chat mapping for future reminders (private chat scenario)
     try:
@@ -143,15 +168,18 @@ async def process_voice_message(
         await tg.send_error_message(chat_id, "Voice file was empty. Please try again.")
         return
 
-    # 2. Transcribe with Whisper (async, handles OGG->MP3 conversion)
+    # 2. Transcribe (Gemini preferred, else OpenAI Whisper)
     try:
-        transcription = await openai_svc.transcribe_audio(
-            audio_bytes, filename="voice.ogg"
+        transcription = await transcribe_preferred(
+            audio_bytes,
+            "voice.ogg",
+            openai_svc,
+            gemini_svc,
         )
-    except OpenAIServiceError as e:
+    except (OpenAIServiceError, GeminiServiceError) as e:
         err_text = str(e)
         logger.error(
-            "Transcription failed (OpenAIServiceError): %s",
+            "Transcription failed: %s",
             err_text[:500] if len(err_text) > 500 else err_text,
         )
         # Railway / Linux images often lack ffmpeg -> OGG conversion fails
@@ -180,15 +208,17 @@ async def process_voice_message(
         )
         return
 
-    # 3. Extract structured data with GPT (async) - may return multiple items
+    # 3. Extract structured data (Gemini preferred, else GPT) - may return multiple items
     try:
-        raw_items = await openai_svc.extract_inventory_data(transcription)
+        raw_items = await extract_preferred(
+            transcription, openai_svc, gemini_svc
+        )
     except ValueError as e:
-        logger.warning("GPT extraction failed: %s", e)
+        logger.warning("LLM extraction failed: %s", e)
         await tg.send_error_message(chat_id, str(e))
         return
-    except OpenAIServiceError as e:
-        logger.error("GPT extraction error: %s", e)
+    except (OpenAIServiceError, GeminiServiceError) as e:
+        logger.error("LLM extraction error: %s", e)
         await tg.send_error_message(
             chat_id, "Could not extract inventory data. Please try again."
         )
@@ -197,7 +227,10 @@ async def process_voice_message(
     # Normalize items (types and empty filtering)
     items = []
     for raw in raw_items:
-        brand = (str(raw.get("brand")) if raw.get("brand") is not None else "").strip()
+        brand_raw = (
+            str(raw.get("brand")) if raw.get("brand") is not None else ""
+        ).strip()
+        brand = brand_cat.normalize_brand(brand_raw)
         flavor = (
             str(raw.get("flavor")) if raw.get("flavor") is not None else ""
         ).strip()

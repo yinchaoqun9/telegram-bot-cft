@@ -7,11 +7,12 @@ OpenAI Service - Handles Whisper transcription and GPT structured extraction.
 """
 
 import io
-import json
 import logging
 from typing import Any, Dict, List, Optional, Tuple
 
 from openai import AsyncOpenAI
+
+from services.inventory_json import parse_inventory_items_from_llm_text
 
 logger = logging.getLogger(__name__)
 
@@ -227,55 +228,4 @@ class OpenAIService:
             logger.error("GPT returned empty content")
             raise ValueError("GPT returned no content")
 
-        content = content.strip()
-
-        # Remove markdown code blocks if present
-        if content.startswith("```"):
-            lines = content.split("\n")
-            content = "\n".join(
-                line for line in lines if not line.strip().startswith("```")
-            )
-
-        try:
-            data = json.loads(content)
-        except json.JSONDecodeError as e:
-            logger.error("Invalid JSON from GPT: %s", content[:200])
-            raise ValueError(f"Failed to parse GPT response: {e}") from e
-
-        # Normalize to a list of item dicts
-        items: List[Dict[str, Any]] = []
-
-        # If wrapped in { "items": [...] }
-        if isinstance(data, dict) and "items" in data:
-            data = data["items"]
-
-        if isinstance(data, dict):
-            # Single item object; wrap in list
-            data = [data]
-
-        if not isinstance(data, list):
-            logger.error("GPT returned unsupported structure: %s", type(data))
-            raise ValueError("Expected a JSON array or an object with 'items' key.")
-
-        required = {"brand", "flavor", "best_by", "quantity"}
-        for idx, raw in enumerate(data):
-            if not isinstance(raw, dict):
-                logger.warning("Skipping non-object item at index %d: %r", idx, raw)
-                continue
-
-            if not required.issubset(raw.keys()):
-                logger.warning("Item %d missing keys. Got: %s", idx, list(raw.keys()))
-
-            item = {
-                "brand": raw.get("brand"),
-                "flavor": raw.get("flavor"),
-                "best_by": raw.get("best_by"),
-                "quantity": raw.get("quantity"),
-            }
-            items.append(item)
-
-        if not items:
-            raise ValueError("No valid inventory items found in GPT response.")
-
-        logger.debug("Extracted %d items from GPT response", len(items))
-        return items
+        return parse_inventory_items_from_llm_text(content)

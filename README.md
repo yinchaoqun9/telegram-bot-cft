@@ -1,12 +1,12 @@
 # Cat Inventory Telegram Bot
 
-Production-ready Telegram bot backend that processes voice notes, transcribes them with Whisper, extracts structured inventory data with GPT, and stores it in Supabase.
+Production-ready Telegram bot backend that processes voice notes, **transcribes** (Gemini first, OpenAI Whisper on failure or when `AI_TRANSCRIBE_PROVIDER=openai`), **extracts** structured inventory (Gemini first, GPT fallback), **normalizes brand names** against a local JSON catalog with fuzzy matching (no web search, minimal token use), and stores rows in Supabase.
 
 ## Features
 
 - **Webhook-based**: Receives Telegram updates via webhook
-- **Voice processing**: Downloads voice notes, transcribes with OpenAI Whisper
-- **Structured extraction**: Uses GPT to extract brand, flavor, best_by, quantity
+- **Voice processing**: Downloads voice notes; transcribes with **Gemini** by default, falls back to **Whisper**
+- **Structured extraction**: **Gemini** JSON extraction by default, falls back to **GPT**; brand strings are then matched to a **local brand map** (`rapidfuzz`)
 - **Supabase storage**: Inserts into `cat_inventory` table
 - **User confirmation**: Sends confirmation message back to the user
 
@@ -15,7 +15,13 @@ Production-ready Telegram bot backend that processes voice notes, transcribes th
 ```
 telegram-bot/
 ├── main.py                 # FastAPI app, webhook endpoint
+├── data/
+│   └── cat_food_brands.json # Example brand catalog (canonical + aliases)
 ├── services/
+│   ├── ai_pipeline.py      # Gemini-first transcribe + extract with OpenAI fallback
+│   ├── brand_catalog.py    # Load JSON, fuzzy-normalize brand
+│   ├── gemini_service.py   # Gemini audio + extraction
+│   ├── inventory_json.py   # Parse LLM JSON output (shared)
 │   ├── openai_service.py   # Whisper + GPT
 │   ├── supabase_service.py # Database operations
 │   └── telegram_service.py # Telegram API (download, send)
@@ -71,10 +77,33 @@ CREATE POLICY "Service role has full access"
 
 Copy `.env.example` to `.env` and fill in:
 
-- `OPENAI_API_KEY` - OpenAI API key
+- `OPENAI_API_KEY` - OpenAI API key (required for Whisper/GPT fallback; also if you force `AI_*_PROVIDER=openai`)
+- `GEMINI_API_KEY` - Optional; when set, default transcribe/extract use Gemini first
+- `GEMINI_MODEL` - Gemini model id (default `gemini-2.0-flash`)
+- `AI_TRANSCRIBE_PROVIDER` - `gemini` (default) or `openai`
+- `AI_EXTRACT_PROVIDER` - `gemini` (default) or `openai`
+- `BRAND_MAP_PATH` - Optional path to brand JSON; default `data/cat_food_brands.json` under the app
+- `BRAND_MATCH_THRESHOLD` - `rapidfuzz` ratio 0–100; below this, the model’s brand string is kept unchanged (default `85`)
 - `SUPABASE_URL` - Supabase project URL
 - `SUPABASE_SERVICE_KEY` - Supabase service role key (not anon key)
 - `TELEGRAM_BOT_TOKEN` - From @BotFather
+
+### Brand catalog format
+
+Maintain a JSON array of objects with `canonical` (display name) and `aliases` (alternate spellings, local names):
+
+```json
+[
+  { "canonical": "Royal Canin", "aliases": ["皇家", "皇家的", "RC"] },
+  { "canonical": "Fancy Feast", "aliases": ["珍致"] }
+]
+```
+
+After the LLM extracts a `brand` string, the server picks the best match among all `canonical` and `alias` values. **Do not** rely on the model or web search to “look up” brands for every message—that costs tokens and latency; extend this file instead.
+
+### Fallback behavior
+
+If Gemini transcribe or extract raises an error, the bot logs a warning and retries with OpenAI (Whisper / GPT). If `GEMINI_API_KEY` is missing but providers are `gemini`, OpenAI is used with a warning.
 
 ### 3. Install and run
 

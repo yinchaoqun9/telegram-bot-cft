@@ -26,3 +26,9 @@ pydub>=0.25.0
 
 # Timezone handling for reminder jobs (optional but recommended)
 pytz>=2024.0
+
+# Google Gemini (optional; transcription + extraction when AI_*_PROVIDER=gemini)
+google-generativeai>=0.8.0
+
+# Local brand fuzzy match (no LLM tokens)
+rapidfuzz>=3.0.0
