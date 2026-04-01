@@ -1,0 +1,3 @@
+# If Railway builds with Nixpacks (no Dockerfile), install ffmpeg for pydub/Telegram voice.
+[phases.setup]
+aptPkgs = ["ffmpeg"]

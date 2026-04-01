@@ -136,10 +136,25 @@ async def process_voice_message(
             audio_bytes, filename="voice.ogg"
         )
     except OpenAIServiceError as e:
-        logger.error("Transcription failed: %s", e)
-        await tg.send_error_message(
-            chat_id, "Could not transcribe the voice message. Please try again."
+        err_text = str(e)
+        logger.error(
+            "Transcription failed (OpenAIServiceError): %s",
+            err_text[:500] if len(err_text) > 500 else err_text,
         )
+        # Railway / Linux images often lack ffmpeg -> OGG conversion fails
+        if any(
+            x in err_text.lower()
+            for x in ("ffmpeg", "ffprobe", "audio conversion")
+        ):
+            await tg.send_error_message(
+                chat_id,
+                "Voice conversion failed (server needs ffmpeg). Ask admin to redeploy with Dockerfile or Nixpacks ffmpeg.",
+            )
+        else:
+            await tg.send_error_message(
+                chat_id,
+                "Could not transcribe the voice message. Please try again.",
+            )
         return
     except Exception as e:
         logger.exception("Unexpected transcription error: %s", e)

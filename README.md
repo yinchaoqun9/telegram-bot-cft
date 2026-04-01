@@ -151,6 +151,32 @@ Saved 2 items:
 - `POST /webhook` - Telegram webhook (receives updates)
 - `GET /health` - Health check
 
+## Railway deployment (ffmpeg required)
+
+Telegram voice is OGG/Opus; this app converts to MP3 with **pydub**, which needs **ffmpeg** on the server. If ffmpeg is missing, users see transcription errors.
+
+**Option A (recommended): Dockerfile**
+
+The repo includes a `Dockerfile` that installs `ffmpeg`. In Railway, set the service to build with Docker (Railway auto-detects `Dockerfile` when present) and use start command:
+
+```bash
+sh -c 'uvicorn main:app --host 0.0.0.0 --port "${PORT:-8000}"'
+```
+
+(The `Dockerfile` `CMD` already does this; you can leave Railway’s start command empty if it uses the image default.)
+
+**Option B: Nixpacks without Docker**
+
+If you build with Nixpacks only, the repo includes `nixpacks.toml` with `aptPkgs = ["ffmpeg"]`. Ensure Railway is not ignoring it.
+
+After deploy, set the Telegram webhook:
+
+```bash
+curl "https://api.telegram.org/bot<YOUR_BOT_TOKEN>/setWebhook?url=https://<your-railway-domain>/webhook"
+```
+
+Use a **single-line** URL (no line breaks inside the quotes).
+
 ## Production Notes
 
 - Use HTTPS for the webhook URL (required by Telegram)
