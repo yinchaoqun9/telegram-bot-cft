@@ -128,95 +128,6 @@ class SupabaseService:
             logger.exception("Supabase upsert telegram_users error: %s", e)
             raise SupabaseServiceError(f"Failed to upsert telegram user: {e}") from e
 
-    def _get_expiring_items_sync(
-        self, target_date: str, offset_days: int, limit: int = 500
-    ) -> List[Dict[str, Any]]:
-        """
-        Fetch inventory rows that expire on target_date and have NOT been reminded for offset_days.
-        """
-        try:
-            # Need: join to telegram_users via user_id to get chat_id.
-            # supabase-py doesn't do SQL joins easily; we do two-step fetch:
-            # 1) fetch expiring rows
-            inv = (
-                self.client.table("cat_inventory")
-                .select(
-                    "id,user_id,brand,flavor,category,best_by,quantity,reminded_offsets"
-                )
-                .eq("best_by", target_date)
-                .limit(limit)
-                .execute()
-            )
-        except Exception as e:
-            logger.exception("Supabase fetch expiring inventory error: %s", e)
-            raise SupabaseServiceError(f"Failed to query inventory: {e}") from e
-
-        rows = inv.data or []
-        if not rows:
-            return []
-
-        # Filter out rows that already contain offset_days in reminded_offsets
-        filtered = []
-        user_ids = set()
-        for r in rows:
-            reminded = r.get("reminded_offsets") or []
-            if isinstance(reminded, list) and offset_days in reminded:
-                continue
-            filtered.append(r)
-            user_ids.add(r.get("user_id"))
-
-        if not filtered or not user_ids:
-            return []
-
-        try:
-            users = (
-                self.client.table("telegram_users")
-                .select("user_id,chat_id")
-                .in_("user_id", list(user_ids))
-                .execute()
-            )
-        except Exception as e:
-            logger.exception("Supabase fetch telegram_users error: %s", e)
-            raise SupabaseServiceError(f"Failed to query telegram_users: {e}") from e
-
-        mapping = {u["user_id"]: u.get("chat_id") for u in (users.data or [])}
-
-        # Attach chat_id
-        result: List[Dict[str, Any]] = []
-        for r in filtered:
-            chat_id = mapping.get(r.get("user_id"))
-            if chat_id is None:
-                continue
-            r2 = dict(r)
-            r2["chat_id"] = chat_id
-            result.append(r2)
-
-        return result
-
-    def _mark_reminded_sync(self, item_id: str, offset_days: int) -> None:
-        """Append offset_days to reminded_offsets for the given inventory item."""
-        try:
-            # We read current offsets then update; for low volume this is OK.
-            current = (
-                self.client.table("cat_inventory")
-                .select("reminded_offsets")
-                .eq("id", item_id)
-                .limit(1)
-                .execute()
-            )
-            data = (current.data or [{}])[0]
-            offsets = data.get("reminded_offsets") or []
-            if not isinstance(offsets, list):
-                offsets = []
-            if offset_days not in offsets:
-                offsets.append(offset_days)
-            self.client.table("cat_inventory").update(
-                {"reminded_offsets": offsets}
-            ).eq("id", item_id).execute()
-        except Exception as e:
-            logger.exception("Supabase mark reminded error: %s", e)
-            raise SupabaseServiceError(f"Failed to mark reminded: {e}") from e
-
     def _list_telegram_users_sync(self) -> List[Dict[str, Any]]:
         try:
             result = (
@@ -398,18 +309,6 @@ class SupabaseService:
     async def upsert_telegram_user(self, user_id: str, chat_id: int) -> None:
         """Async wrapper for upserting telegram_users mapping."""
         await asyncio.to_thread(self._upsert_telegram_user_sync, user_id, chat_id)
-
-    async def get_expiring_items(
-        self, target_date: date, offset_days: int, limit: int = 500
-    ) -> List[Dict[str, Any]]:
-        """Async wrapper to fetch expiring items for a given offset."""
-        return await asyncio.to_thread(
-            self._get_expiring_items_sync, target_date.isoformat(), offset_days, limit
-        )
-
-    async def mark_reminded(self, item_id: str, offset_days: int) -> None:
-        """Async wrapper to mark an item as reminded for offset_days."""
-        await asyncio.to_thread(self._mark_reminded_sync, item_id, offset_days)
 
     async def list_telegram_users(self) -> List[Dict[str, Any]]:
         return await asyncio.to_thread(self._list_telegram_users_sync)

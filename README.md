@@ -55,9 +55,8 @@ CREATE TABLE cat_inventory (
 ALTER TABLE cat_inventory
   ADD COLUMN IF NOT EXISTS category TEXT NOT NULL DEFAULT '';
 
--- Legacy: older per-offset reminders; digest job no longer writes this
-ALTER TABLE cat_inventory
-  ADD COLUMN IF NOT EXISTS reminded_offsets INT[] NOT NULL DEFAULT '{}';
+-- Optional: drop legacy column if you added it for old per-offset reminders
+-- ALTER TABLE cat_inventory DROP COLUMN IF EXISTS reminded_offsets;
 
 -- Map Telegram user_id to private chat_id for proactive reminders
 CREATE TABLE IF NOT EXISTS telegram_users (
