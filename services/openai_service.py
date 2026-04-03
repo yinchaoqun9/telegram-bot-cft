@@ -31,10 +31,13 @@ of items from the transcription.
 OUTPUT FORMAT (VERY IMPORTANT):
 - You MUST return ONLY a JSON array.
 - Each element of the array MUST be an object with exactly these keys:
-  - "brand"   (string or null)
-  - "flavor"  (string or null)
-  - "best_by" (string or null, format YYYY-MM-DD)
-  - "quantity"(integer or null)
+  - "brand"    (string or null)
+  - "flavor"   (string or null)
+  - "category" (string or null) — product type. Use ONE of these Chinese labels when possible:
+    冻干 | 罐头 | 汤包 | 猫条 | 零食
+    (freeze-dried / canned tin / soup pouch / cat stick / treats). If unclear, null.
+  - "best_by"  (string or null, format YYYY-MM-DD)
+  - "quantity" (integer or null)
 - No extra keys, no wrapper object, no explanations, no markdown.
 
 INTERPRETATION RULES:
@@ -46,6 +49,7 @@ INTERPRETATION RULES:
   the name is uncommon. Only use null if there is truly no brand-like name.
 - flavor: flavor or variant (e.g. "chicken", "salmon", "鸡肉"). If the only
   specific name sounds like a brand, put it in "brand", not "flavor".
+- category: listen for 冻干、罐头、汤包、猫条、零食 or English equivalents above.
 - best_by: expiration or best-by date; normalize to YYYY-MM-DD when possible.
 - quantity: number of units (cans/bags/etc.), convert words like "two" or "两"
   into an integer.

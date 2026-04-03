@@ -7,7 +7,8 @@ Production-ready Telegram bot backend that processes voice notes, **transcribes*
 - **Webhook-based**: Receives Telegram updates via webhook
 - **Voice processing**: Downloads voice notes; transcribes with **Gemini** by default, falls back to **Whisper**
 - **Structured extraction**: **Gemini** JSON extraction by default, falls back to **GPT**; brand strings are then matched to a **local brand map** (`rapidfuzz`)
-- **Supabase storage**: Inserts into `cat_inventory` table
+- **Supabase storage**: Inserts into `cat_inventory` (incl. `category`: 冻干 / 罐头 / 汤包 / 猫条 / 零食)
+- **Brand resolution**: Fuzzy match on LLM `brand` plus **substring match of the full transcript** against the local brand list (no extra API calls); helps niche names when the model omits or mislabels the brand
 - **User confirmation**: Sends confirmation message back to the user
 - **Expiry digest**: Daily job groups items expiring in **0–7 days** and **8–15 days** (configurable window); inline **Used** buttons or `/used <item_id>` decrease quantity (row deleted at 0)
 
@@ -44,10 +45,15 @@ CREATE TABLE cat_inventory (
   user_id TEXT NOT NULL,
   brand TEXT NOT NULL DEFAULT '',
   flavor TEXT NOT NULL DEFAULT '',
+  category TEXT NOT NULL DEFAULT '',
   best_by DATE,
   quantity INTEGER NOT NULL DEFAULT 0,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+-- Existing projects: add category (冻干/罐头/汤包/猫条/零食)
+ALTER TABLE cat_inventory
+  ADD COLUMN IF NOT EXISTS category TEXT NOT NULL DEFAULT '';
 
 -- Legacy: older per-offset reminders; digest job no longer writes this
 ALTER TABLE cat_inventory
@@ -86,6 +92,8 @@ Copy `.env.example` to `.env` and fill in:
 - `AI_EXTRACT_PROVIDER` - `gemini` (default) or `openai`
 - `BRAND_MAP_PATH` - Optional path to brand JSON; default `data/cat_food_brands.json` under the app
 - `BRAND_MATCH_THRESHOLD` - `rapidfuzz` ratio 0–100; below this, the model’s brand string is kept unchanged (default `80`, slightly more tolerant of one-letter ASR/LLM typos)
+- `BRAND_WEB_SEARCH_ENABLED` - `1`/`true` to enable Google CSE + LLM brand fallback when fuzzy and transcript substring both miss the catalog (requires `GOOGLE_CSE_API_KEY`, `GOOGLE_CSE_CX`)
+- `GOOGLE_CSE_API_KEY`, `GOOGLE_CSE_CX` - [Custom Search JSON API](https://developers.google.com/custom-search/v1/overview) key and search engine id
 - `SUPABASE_URL` - Supabase project URL
 - `SUPABASE_SERVICE_KEY` - Supabase service role key (not anon key)
 - `TELEGRAM_BOT_TOKEN` - From @BotFather
@@ -103,7 +111,9 @@ Maintain a JSON array of objects with `canonical` (display name) and `aliases` (
 ]
 ```
 
-After the LLM extracts a `brand` string, the server picks the best match among all `canonical` and `alias` values. **Do not** rely on the model or web search to “look up” brands for every message—that costs tokens and latency; extend this file instead.
+After the LLM extracts a `brand` string, the server matches against `canonical` and `aliases` (rapidfuzz), then checks whether the **full transcript** contains any catalog alias. **Optional web fallback** (off by default): if both fail to reach `BRAND_MATCH_THRESHOLD` and you set `BRAND_WEB_SEARCH_ENABLED=1` with Google Programmable Search (`GOOGLE_CSE_API_KEY`, `GOOGLE_CSE_CX`), the bot runs **one** Custom Search + **one** short LLM call to infer an official brand name, then fuzzy-matches again. This only runs for messages where local matching failed—prefer extending `cat_food_brands.json` for common brands to save cost and latency.
+
+**Google CSE setup (optional):** In [Google Cloud Console](https://console.cloud.google.com/) enable “Custom Search API”, create an API key. In [Programmable Search Engine](https://programmablesearchengine.google.com/) create a search engine (you can set “Search the entire web”), copy the **cx** ID into `GOOGLE_CSE_CX`.
 
 ### Fallback behavior
 

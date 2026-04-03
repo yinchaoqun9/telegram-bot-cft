@@ -28,6 +28,14 @@ class GeminiService:
         self._api_key = api_key
         self._model = model
 
+    @property
+    def api_key(self) -> str:
+        return self._api_key
+
+    @property
+    def model_name(self) -> str:
+        return self._model
+
     def _transcribe_sync(self, mp3_bytes: bytes) -> str:
         import google.generativeai as genai
 

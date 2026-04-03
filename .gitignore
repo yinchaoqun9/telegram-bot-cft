@@ -1,6 +1,3 @@
-# Cursor debug NDJSON (local voice pipeline)
-debug-0a386a.log
-
 # Environment
 .env
 venv/

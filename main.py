@@ -18,8 +18,9 @@ from fastapi import FastAPI, Request, Response
 
 from services.ai_pipeline import extract_preferred, transcribe_preferred
 from services.brand_catalog import get_brand_catalog
-from services.debug_agent_log import debug_agent_log
+from services.brand_web_research import maybe_refine_brand_with_web_search
 from services.gemini_service import GeminiService, GeminiServiceError
+from services.product_category import normalize_category
 from services.openai_service import OpenAIService, OpenAIServiceError
 from services.supabase_service import SupabaseService, SupabaseServiceError
 from services.telegram_service import TelegramService, TelegramServiceError
@@ -209,33 +210,12 @@ async def process_voice_message(
         )
         return
 
-    # #region agent log
-    _tsnip = transcription.strip()
-    debug_agent_log(
-        "H1",
-        "main.py:process_voice_message",
-        "transcription_ok",
-        {
-            "transcription_len": len(_tsnip),
-            "transcription_preview": _tsnip[:120],
-        },
-    )
-    # #endregion
-
     # 3. Extract structured data (Gemini preferred, else GPT) - may return multiple items
     try:
         raw_items = await extract_preferred(
             transcription, openai_svc, gemini_svc
         )
     except ValueError as e:
-        # #region agent log
-        debug_agent_log(
-            "H4",
-            "main.py:process_voice_message",
-            "extract_value_error",
-            {"error_type": type(e).__name__, "error_msg": str(e)[:300]},
-        )
-        # #endregion
         logger.warning("LLM extraction failed: %s", e)
         await tg.send_error_message(chat_id, str(e))
         return
@@ -246,31 +226,18 @@ async def process_voice_message(
         )
         return
 
-    # #region agent log
-    _brands_from_model = [
-        (raw.get("brand") if isinstance(raw, dict) else None) for raw in raw_items
-    ]
-    debug_agent_log(
-        "H2",
-        "main.py:process_voice_message",
-        "raw_items_after_extract",
-        {
-            "raw_count": len(raw_items),
-            "brand_fields": [str(b)[:80] if b is not None else None for b in _brands_from_model],
-        },
-    )
-    # #endregion
-
     # Normalize items (types and empty filtering)
     items = []
-    _brand_trace: list = []
     for raw in raw_items:
         brand_raw = (
             str(raw.get("brand")) if raw.get("brand") is not None else ""
         ).strip()
-        brand = brand_cat.normalize_brand(brand_raw)
-        _brand_trace.append(
-            {"brand_raw": brand_raw[:80], "brand_normalized": (brand or "")[:80]}
+        brand = await maybe_refine_brand_with_web_search(
+            brand_cat,
+            brand_raw,
+            transcription,
+            openai_svc,
+            gemini_svc,
         )
         flavor = (
             str(raw.get("flavor")) if raw.get("flavor") is not None else ""
@@ -278,13 +245,17 @@ async def process_voice_message(
         best_by = (
             str(raw.get("best_by")) if raw.get("best_by") is not None else ""
         ).strip()
+        cat_raw = (
+            str(raw.get("category")) if raw.get("category") is not None else ""
+        ).strip()
+        category = normalize_category(cat_raw, transcription)
         try:
             quantity = int(raw.get("quantity") or 0)
         except (TypeError, ValueError):
             quantity = 0
 
         # Skip items that are completely empty
-        if not (brand or flavor or best_by or quantity):
+        if not (brand or flavor or best_by or quantity or category):
             continue
 
         items.append(
@@ -293,33 +264,11 @@ async def process_voice_message(
                 "flavor": flavor,
                 "best_by": best_by,
                 "quantity": quantity,
+                "category": category,
             }
         )
 
-    # #region agent log
-    debug_agent_log(
-        "H5",
-        "main.py:process_voice_message",
-        "brand_normalize_summary",
-        {
-            "catalog_choice_count": brand_cat.choice_count(),
-            "pairs": _brand_trace,
-        },
-    )
-    # #endregion
-
     if not items:
-        # #region agent log
-        debug_agent_log(
-            "H3",
-            "main.py:process_voice_message",
-            "all_items_filtered_empty",
-            {
-                "raw_items_count": len(raw_items),
-                "note": "brand flavor best_by quantity all empty after normalize",
-            },
-        )
-        # #endregion
         await tg.send_error_message(
             chat_id,
             "Could not find any inventory items in your message. Please try again.",
@@ -553,7 +502,7 @@ async def webhook(request: Request) -> Response:
             try:
                 await tg.send_message(
                     chat_id,
-                    "Send a voice message describing your cat food (brand, flavor, best-by date, quantity) to add it to your inventory.\n\n"
+                    "Send a voice message: brand, category (冻干/罐头/汤包/猫条/零食), flavor, best-by, quantity.\n\n"
                     "After saving, use Delete under the confirmation to remove a wrong row.\n"
                     "Daily digest: tap Used or /used <item_id>.",
                     parse_mode=None,

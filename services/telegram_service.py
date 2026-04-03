@@ -259,8 +259,10 @@ class TelegramService:
 
         if len(saved_rows) == 1:
             item = saved_rows[0]
+            cat = (item.get("category") or "").strip()
+            cat_bit = f"[{cat}] " if cat else ""
             msg = (
-                f"Saved: {item.get('brand', '') or ''} {item.get('flavor', '') or ''}, "
+                f"Saved: {cat_bit}{item.get('brand', '') or ''} {item.get('flavor', '') or ''}, "
                 f"expires {item.get('best_by', '') or ''}, quantity {int(item.get('quantity') or 0)}"
             )
             msg += footer
@@ -279,8 +281,10 @@ class TelegramService:
             flavor = item.get("flavor", "") or ""
             best_by = item.get("best_by", "") or ""
             qty = int(item.get("quantity") or 0)
+            cat = (item.get("category") or "").strip()
+            cpre = f"[{cat}] " if cat else ""
             lines.append(
-                f"{idx}) {brand} {flavor}, expires {best_by}, quantity {qty}"
+                f"{idx}) {cpre}{brand} {flavor}, expires {best_by}, quantity {qty}"
             )
 
         msg = "Saved {count} items:\n{items}{footer}".format(

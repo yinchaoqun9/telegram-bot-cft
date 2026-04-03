@@ -58,6 +58,7 @@ class SupabaseService:
             "user_id": str(user_id),
             "brand": brand or "",
             "flavor": flavor or "",
+            "category": "",
             "best_by": best_by_val,
             "quantity": quantity or 0,
         }
@@ -92,6 +93,7 @@ class SupabaseService:
                 "user_id": str(user_id),
                 "brand": item.get("brand") or "",
                 "flavor": item.get("flavor") or "",
+                "category": (item.get("category") or "") or "",
                 "best_by": best_by_val,
                 "quantity": int(item.get("quantity") or 0),
             }
@@ -138,7 +140,9 @@ class SupabaseService:
             # 1) fetch expiring rows
             inv = (
                 self.client.table("cat_inventory")
-                .select("id,user_id,brand,flavor,best_by,quantity,reminded_offsets")
+                .select(
+                    "id,user_id,brand,flavor,category,best_by,quantity,reminded_offsets"
+                )
                 .eq("best_by", target_date)
                 .limit(limit)
                 .execute()
@@ -236,7 +240,7 @@ class SupabaseService:
         try:
             inv = (
                 self.client.table("cat_inventory")
-                .select("id,user_id,brand,flavor,best_by,quantity")
+                .select("id,user_id,brand,flavor,category,best_by,quantity")
                 .eq("user_id", str(user_id))
                 .gt("quantity", 0)
                 .gte("best_by", today.isoformat())

@@ -112,7 +112,7 @@ async def main() -> None:
                 if text_lower in ("/start", "/help"):
                     await tg.send_message(
                         chat_id,
-                        "Send a voice message describing your cat food (brand, flavor, best-by date, quantity) to add it to your inventory.\n\n"
+                        "Send a voice message: brand, category (冻干/罐头/汤包/猫条/零食), flavor, best-by, quantity.\n\n"
                         "After saving, use Delete under the confirmation to remove a wrong row.\n"
                         "Daily digest: tap Used or /used <item_id>.",
                         parse_mode=None,

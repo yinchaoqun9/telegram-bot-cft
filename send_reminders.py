@@ -53,10 +53,12 @@ def _max_buttons() -> int:
 def _format_item_line(r: Dict[str, Any]) -> str:
     brand = (r.get("brand") or "").strip()
     flavor = (r.get("flavor") or "").strip()
+    cat = (r.get("category") or "").strip()
     best_by = r.get("best_by") or ""
     qty = int(r.get("quantity") or 0)
     iid = str(r.get("id") or "")
-    line = f"• {brand} {flavor} — {best_by} — qty {qty}"
+    cpre = f"[{cat}] " if cat else ""
+    line = f"• {cpre}{brand} {flavor} — {best_by} — qty {qty}"
     if iid:
         line += f"\n  id: {iid}"
     return line

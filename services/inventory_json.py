@@ -79,13 +79,15 @@ def parse_inventory_items_from_llm_text(content: str) -> List[Dict[str, Any]]:
             continue
 
         keys = set(raw.keys())
-        if not {"brand", "flavor", "best_by", "quantity"}.issubset(keys):
+        required = {"brand", "flavor", "best_by", "quantity", "category"}
+        if not required.issubset(keys):
             logger.warning("Item %d missing keys. Got: %s", idx, list(keys))
 
         items.append(
             {
                 "brand": raw.get("brand"),
                 "flavor": raw.get("flavor"),
+                "category": raw.get("category"),
                 "best_by": raw.get("best_by"),
                 "quantity": raw.get("quantity"),
             }
