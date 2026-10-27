@@ -90,7 +90,10 @@ def test_dashboard_page(dash_client: TestClient):
 def test_dashboard_config(dash_client: TestClient):
     r = dash_client.get("/api/dashboard/config")
     assert r.status_code == 200
-    assert r.json()["bot_username"] == "cpg_tracker_bot"
+    body = r.json()
+    assert body["bot_username"] == "cpg_tracker_bot"
+    assert body["restock_thresholds"]["罐头"] == 6
+    assert body["restock_thresholds"]["冻干"] == 3
 
 
 def test_auth_and_inventory(dash_client: TestClient, monkeypatch):

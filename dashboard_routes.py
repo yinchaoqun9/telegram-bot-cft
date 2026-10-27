@@ -80,6 +80,7 @@ async def dashboard_page() -> FileResponse:
 async def dashboard_config() -> Dict[str, Any]:
     """Public config for the Login Widget (no secrets)."""
     uname = bot_username()
+    # Restock heuristics for the dashboard (units per category)
     return {
         "bot_username": uname,
         "bot_configured": bool(uname),
@@ -88,6 +89,14 @@ async def dashboard_config() -> Dict[str, Any]:
             if uname
             else "Set TELEGRAM_BOT_USERNAME and BotFather /setdomain for this host."
         ),
+        "restock_thresholds": {
+            "罐头": int(os.environ.get("RESTOCK_THRESHOLD_CAN", "6")),
+            "冻干": int(os.environ.get("RESTOCK_THRESHOLD_FREEZE", "3")),
+            "汤包": int(os.environ.get("RESTOCK_THRESHOLD_SOUP", "2")),
+            "猫条": int(os.environ.get("RESTOCK_THRESHOLD_STICK", "2")),
+            "零食": int(os.environ.get("RESTOCK_THRESHOLD_TREAT", "2")),
+            "其他": int(os.environ.get("RESTOCK_THRESHOLD_OTHER", "2")),
+        },
     }
 
 
