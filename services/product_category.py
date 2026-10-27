@@ -4,7 +4,7 @@ No API calls.
 """
 
 import re
-from typing import List, Tuple
+from typing import List, Optional, Tuple
 
 # canonical -> spoken / English aliases (longer phrases first for substring scan)
 _CATEGORY_ALIASES: List[Tuple[str, List[str]]] = [
@@ -26,6 +26,10 @@ _CATEGORY_ALIASES: List[Tuple[str, List[str]]] = [
             "湿粮罐",
             "猫罐头",
             "罐头",
+            "湿粮",
+            "wet food",
+            "wetfood",
+            "wet",
             "canned food",
             "canned",
         ],
@@ -108,9 +112,16 @@ def infer_category_from_transcription(transcription: str) -> str:
     return ""
 
 
-def normalize_category(raw: str, transcription: str = "") -> str:
+# Default when voice/LLM does not specify a type (wet food)
+DEFAULT_CATEGORY = "罐头"
+
+
+def normalize_category(
+    raw: str, transcription: str = "", *, default: Optional[str] = None
+) -> str:
     """
     Map LLM category string to one of the five canonical labels, or infer from transcript.
+    If still empty, use default (湿粮/罐头 = wet food) unless default=\"\".
     """
     s = (raw or "").strip()
     if s:
@@ -124,4 +135,9 @@ def normalize_category(raw: str, transcription: str = "") -> str:
         for alias, canonical in _ALIAS_PAIRS:
             if len(alias) >= 2 and alias in s:
                 return canonical
-    return infer_category_from_transcription(transcription)
+    inferred = infer_category_from_transcription(transcription)
+    if inferred:
+        return inferred
+    if default is None:
+        default = DEFAULT_CATEGORY
+    return default or ""

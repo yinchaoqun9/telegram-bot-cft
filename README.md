@@ -1,11 +1,11 @@
 # Cat Inventory Telegram Bot
 
-Production-ready Telegram bot backend that processes voice notes, **transcribes** (Gemini first, OpenAI Whisper on failure or when `AI_TRANSCRIBE_PROVIDER=openai`), **extracts** structured inventory (Gemini first, GPT fallback), **normalizes brand names** against a local JSON catalog with fuzzy matching (no web search, minimal token use), and stores rows in Supabase.
+Production-ready Telegram bot backend that processes voice notes, **transcribes** (Gemini 3.5 Transcribe first, then OpenAI `gpt-transcribe`, then AssemblyAI Universal-3.5 Pro), **extracts** structured inventory (Gemini flash first, GPT fallback), **normalizes brand names** against a local JSON catalog with fuzzy matching (no web search, minimal token use), and stores rows in Supabase.
 
 ## Features
 
 - **Webhook-based**: Receives Telegram updates via webhook
-- **Voice processing**: Downloads voice notes; transcribes with **Gemini** by default, falls back to **Whisper**
+- **Voice processing**: Downloads voice notes; STT chain **Gemini `gemini-3.5-transcribe` → OpenAI `gpt-transcribe` → AssemblyAI `universal-3-5-pro`**
 - **Structured extraction**: **Gemini** JSON extraction by default, falls back to **GPT**; brand strings are then matched to a **local brand map** (`rapidfuzz`)
 - **Supabase storage**: Inserts into `cat_inventory` (incl. `category`: 冻干 / 罐头 / 汤包 / 猫条 / 零食)
 - **Brand resolution**: Fuzzy match on LLM `brand` plus **substring match of the full transcript** against the local brand list (no extra API calls); helps niche names when the model omits or mislabels the brand
@@ -17,14 +17,17 @@ Production-ready Telegram bot backend that processes voice notes, **transcribes*
 ```
 telegram-bot/
 ├── main.py                 # FastAPI app, webhook endpoint
+├── dashboard_routes.py     # /dashboard + auth + inventory APIs
+├── static/dashboard/       # Inventory UI (Telegram Login)
 ├── data/
 │   └── cat_food_brands.json # Example brand catalog (canonical + aliases)
 ├── services/
-│   ├── ai_pipeline.py      # Gemini-first transcribe + extract with OpenAI fallback
+│   ├── ai_pipeline.py      # STT chain + extract with provider fallback
+│   ├── assemblyai_service.py # AssemblyAI Universal-3.5 Pro (file STT backup)
 │   ├── brand_catalog.py    # Load JSON, fuzzy-normalize brand
-│   ├── gemini_service.py   # Gemini audio + extraction
+│   ├── gemini_service.py   # gemini-3.5-transcribe + extract model
 │   ├── inventory_json.py   # Parse LLM JSON output (shared)
-│   ├── openai_service.py   # Whisper + GPT
+│   ├── openai_service.py   # gpt-transcribe + GPT extract
 │   ├── supabase_service.py # Database operations
 │   └── telegram_service.py # Telegram API (download, send)
 ├── send_reminders.py       # Daily cron: digest + optional inline keyboards
@@ -32,6 +35,17 @@ telegram-bot/
 ├── .env.example
 └── README.md
 ```
+
+## Tests
+
+No live Telegram / Gemini / OpenAI / Supabase calls. From this directory:
+
+```bash
+pip install -r requirements.txt
+pytest -q
+```
+
+Coverage includes inventory JSON parsing, brand catalog fuzzy/transcript match, category normalization, AI provider fallback, and FastAPI `/health` + webhook routing (mocked).
 
 ## Setup
 
@@ -78,17 +92,66 @@ CREATE POLICY "Service role has full access"
   ON telegram_users FOR ALL
   USING (true)
   WITH CHECK (true);
+
+-- Training layer: user corrections teach brand aliases for future voice notes
+CREATE TABLE IF NOT EXISTS user_brand_aliases (
+  user_id TEXT NOT NULL,
+  alias TEXT NOT NULL,
+  canonical TEXT NOT NULL,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY (user_id, alias)
+);
+
+CREATE TABLE IF NOT EXISTS brand_corrections (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id TEXT NOT NULL,
+  item_id UUID,
+  field TEXT NOT NULL DEFAULT 'brand',
+  old_value TEXT NOT NULL DEFAULT '',
+  new_value TEXT NOT NULL DEFAULT '',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Future: household sharing (not wired in app yet)
+-- CREATE TABLE households (
+--   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+--   name TEXT NOT NULL DEFAULT '',
+--   invite_code TEXT UNIQUE,
+--   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+-- );
+-- CREATE TABLE household_members (
+--   household_id UUID REFERENCES households(id),
+--   user_id TEXT NOT NULL,
+--   role TEXT NOT NULL DEFAULT 'member',
+--   PRIMARY KEY (household_id, user_id)
+-- );
 ```
+
+### Training layer (Fix)
+
+After a voice save, tap **Fix** → send one line; the bot auto-detects:
+- a **number** → quantity
+- a **category** (`罐头` / `wet food` / `冻干` / …) → category  
+- otherwise → **brand** (and learns `wrong → correct` for that user)
+
+Or `/fix brand|quantity|category <item_id> <value>`. Default category when unspecified is **罐头 (wet food)**. **Open −1** = used one pack/can.
+
+Learning is **not** fine-tuning the LLM: corrections go into `user_brand_aliases` and are applied on the next voice note *before* the global catalog / model output.
 
 ### 2. Environment variables
 
 Copy `.env.example` to `.env` and fill in:
 
-- `OPENAI_API_KEY` - OpenAI API key (required for Whisper/GPT fallback; also if you force `AI_*_PROVIDER=openai`)
-- `GEMINI_API_KEY` - Optional; when set, default transcribe/extract use Gemini first
-- `GEMINI_MODEL` - Gemini model id (default `gemini-2.0-flash`)
-- `AI_TRANSCRIBE_PROVIDER` - `gemini` (default) or `openai`
+- `OPENAI_API_KEY` - OpenAI API key (`gpt-transcribe` + GPT extract fallback)
+- `OPENAI_TRANSCRIBE_MODEL` - Default `gpt-transcribe` (`whisper-1` deprecated / shutdown 2027-02-26)
+- `GEMINI_API_KEY` - Optional; when set, default STT + extract use Gemini first
+- `GEMINI_TRANSCRIBE_MODEL` - Dedicated STT model (default `gemini-3.5-transcribe`)
+- `GEMINI_EXTRACT_MODEL` - Chat/flash model for inventory JSON (default `gemini-2.0-flash`; do **not** use the STT model here)
+- `GEMINI_MODEL` - Legacy alias for extract model if `GEMINI_EXTRACT_MODEL` unset
+- `AI_TRANSCRIBE_PROVIDER` - `gemini` (default), `openai`, or `assemblyai`
 - `AI_EXTRACT_PROVIDER` - `gemini` (default) or `openai`
+- `ASSEMBLYAI_API_KEY` - Optional 3rd STT backup for **completed** voice files
+- `ASSEMBLYAI_SPEECH_MODELS` - Default `universal-3-5-pro,universal-2` (file/async). **`universal-3-6-pro` is streaming-only** — not for Telegram OGG uploads
 - `BRAND_MAP_PATH` - Optional path to brand JSON; default `data/cat_food_brands.json` under the app
 - `BRAND_MATCH_THRESHOLD` - `rapidfuzz` ratio 0–100; below this, the model’s brand string is kept unchanged (default `80`, slightly more tolerant of one-letter ASR/LLM typos)
 - `BRAND_WEB_SEARCH_ENABLED` - `1`/`true` to enable Google CSE + LLM brand fallback when fuzzy and transcript substring both miss the catalog (requires `GOOGLE_CSE_API_KEY`, `GOOGLE_CSE_CX`)
@@ -96,8 +159,22 @@ Copy `.env.example` to `.env` and fill in:
 - `SUPABASE_URL` - Supabase project URL
 - `SUPABASE_SERVICE_KEY` - Supabase service role key (not anon key)
 - `TELEGRAM_BOT_TOKEN` - From @BotFather
+- `TELEGRAM_BOT_USERNAME` - Bot username **without** `@` (required for the web dashboard Login Widget)
+- `DASHBOARD_PUBLIC_URL` - Optional public HTTPS origin (no trailing slash); shown in `/start` as the dashboard link
 - `REMINDER_MAX_DAYS` - Upper bound for the “8–N days” digest section (default `15`, minimum effective window is 7)
 - `REMINDER_DIGEST_MAX_BUTTONS` - Max inline **Used** buttons per digest message (default `18`)
+
+### Web dashboard (multi-user inventory)
+
+End users open **`/dashboard`**, sign in with **Telegram Login**, and only see rows for their own Telegram `user_id`. The browser never gets `SUPABASE_SERVICE_KEY`; the FastAPI server verifies Telegram’s HMAC and sets an HttpOnly session cookie.
+
+1. Set `TELEGRAM_BOT_USERNAME` (e.g. `cpg_tracker_bot`).
+2. Deploy on **HTTPS** (Railway / etc.). Telegram Login does **not** work on plain `http://localhost` for real users.
+3. In [@BotFather](https://t.me/BotFather): `/setdomain` → pick your bot → enter the host only (e.g. `your-app.up.railway.app`).
+4. Optionally set `DASHBOARD_PUBLIC_URL=https://your-app.up.railway.app` so `/start` includes the link.
+5. Users: open `https://…/dashboard` → Telegram Login → inventory table → **Used −1**.
+
+Local smoke-test: `python main.py` then open `http://127.0.0.1:8000/dashboard` (widget may be blocked until domain + HTTPS are set; API auth unit tests cover the HMAC path).
 
 ### Brand catalog format
 
@@ -116,7 +193,15 @@ After the LLM extracts a `brand` string, the server matches against `canonical` 
 
 ### Fallback behavior
 
-If Gemini transcribe or extract raises an error, the bot logs a warning and retries with OpenAI (Whisper / GPT). If `GEMINI_API_KEY` is missing but providers are `gemini`, OpenAI is used with a warning.
+**Transcription** (completed Telegram voice notes):
+
+1. `gemini-3.5-transcribe` (auto language, optional brand vocabulary hints) when `GEMINI_API_KEY` is set
+2. OpenAI `gpt-transcribe` when Gemini fails / missing
+3. AssemblyAI `universal-3-5-pro` (+ `universal-2` fallback) when `ASSEMBLYAI_API_KEY` is set and OpenAI fails
+
+Note: AssemblyAI chat sometimes suggests `universal-3-6-pro` for live mic streaming. This bot uploads **finished** OGG files, so async **Universal-3.5 Pro** is the correct model.
+
+**Extraction**: If Gemini extract raises, the bot retries with OpenAI GPT. If `GEMINI_API_KEY` is missing but providers are `gemini`, OpenAI is used with a warning.
 
 ### 3. Install and run
 
@@ -204,6 +289,12 @@ The main bot webhook must stay deployed so callbacks and `/used` reach the serve
 
 ## API Endpoints
 
+- `GET /dashboard` - Inventory web UI (Telegram Login)
+- `GET /api/dashboard/config` - Public bot username for the Login Widget
+- `POST /api/auth/telegram` - Verify Login Widget payload → session cookie
+- `POST /api/auth/logout` - Clear session
+- `GET /api/me/inventory` - Current user’s inventory
+- `POST /api/me/inventory/{id}/used` - Decrement quantity (delete at 0)
 - `POST /webhook` - Telegram webhook (receives updates)
 - `GET /health` - Health check
 

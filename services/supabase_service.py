@@ -329,3 +329,176 @@ class SupabaseService:
 
     async def delete_inventory_item(self, user_id: str, item_id: str) -> None:
         await asyncio.to_thread(self._delete_inventory_item_sync, user_id, item_id)
+
+    def _list_inventory_for_user_sync(
+        self, user_id: str, *, include_zero: bool = False
+    ) -> List[Dict[str, Any]]:
+        """All inventory rows for a Telegram user (dashboard)."""
+        try:
+            q = (
+                self.client.table("cat_inventory")
+                .select("id,user_id,brand,flavor,category,best_by,quantity,created_at")
+                .eq("user_id", str(user_id))
+                .order("best_by", desc=False)
+                .limit(1000)
+            )
+            if not include_zero:
+                q = q.gt("quantity", 0)
+            result = q.execute()
+        except Exception as e:
+            logger.exception("Supabase list inventory error: %s", e)
+            raise SupabaseServiceError(f"Failed to list inventory: {e}") from e
+        return result.data or []
+
+    async def list_inventory_for_user(
+        self, user_id: str, *, include_zero: bool = False
+    ) -> List[Dict[str, Any]]:
+        return await asyncio.to_thread(
+            self._list_inventory_for_user_sync, user_id, include_zero=include_zero
+        )
+
+    def _get_inventory_item_sync(
+        self, user_id: str, item_id: str
+    ) -> Optional[Dict[str, Any]]:
+        try:
+            result = (
+                self.client.table("cat_inventory")
+                .select("id,user_id,brand,flavor,category,best_by,quantity")
+                .eq("id", item_id)
+                .eq("user_id", str(user_id))
+                .limit(1)
+                .execute()
+            )
+        except Exception as e:
+            logger.exception("Supabase get item error: %s", e)
+            raise SupabaseServiceError(f"Failed to fetch item: {e}") from e
+        rows = result.data or []
+        return rows[0] if rows else None
+
+    def _update_inventory_fields_sync(
+        self, user_id: str, item_id: str, fields: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        allowed = {"brand", "flavor", "category", "best_by", "quantity"}
+        patch = {k: v for k, v in fields.items() if k in allowed}
+        if not patch:
+            raise SupabaseServiceError("No valid fields to update")
+        if "best_by" in patch:
+            bb = (str(patch["best_by"] or "").strip() or None)
+            patch["best_by"] = bb
+        try:
+            result = (
+                self.client.table("cat_inventory")
+                .update(patch)
+                .eq("id", item_id)
+                .eq("user_id", str(user_id))
+                .execute()
+            )
+        except Exception as e:
+            logger.exception("Supabase update item error: %s", e)
+            raise SupabaseServiceError(f"Failed to update item: {e}") from e
+        if not result.data:
+            raise SupabaseServiceError("Item not found")
+        return result.data[0]
+
+    def _list_user_brand_aliases_sync(self, user_id: str) -> List[Dict[str, str]]:
+        try:
+            result = (
+                self.client.table("user_brand_aliases")
+                .select("alias,canonical")
+                .eq("user_id", str(user_id))
+                .limit(500)
+                .execute()
+            )
+        except Exception as e:
+            # Table may not exist yet — training layer optional until SQL is applied
+            logger.warning("user_brand_aliases unavailable: %s", e)
+            return []
+        out: List[Dict[str, str]] = []
+        for row in result.data or []:
+            a = (row.get("alias") or "").strip()
+            c = (row.get("canonical") or "").strip()
+            if a and c:
+                out.append({"alias": a, "canonical": c})
+        return out
+
+    def _upsert_user_brand_alias_sync(
+        self, user_id: str, alias: str, canonical: str
+    ) -> None:
+        a = (alias or "").strip()
+        c = (canonical or "").strip()
+        if not a or not c or a.lower() == c.lower():
+            return
+        row = {
+            "user_id": str(user_id),
+            "alias": a,
+            "canonical": c,
+            "updated_at": datetime.utcnow().isoformat() + "Z",
+        }
+        try:
+            self.client.table("user_brand_aliases").upsert(row).execute()
+        except Exception as e:
+            logger.warning("Failed to upsert user_brand_aliases: %s", e)
+
+    def _log_brand_correction_sync(
+        self,
+        user_id: str,
+        *,
+        item_id: Optional[str],
+        old_value: str,
+        new_value: str,
+        field: str = "brand",
+    ) -> None:
+        row = {
+            "id": str(uuid4()),
+            "user_id": str(user_id),
+            "item_id": item_id,
+            "field": field,
+            "old_value": old_value or "",
+            "new_value": new_value or "",
+        }
+        try:
+            self.client.table("brand_corrections").insert(row).execute()
+        except Exception as e:
+            logger.warning("Failed to log brand_corrections: %s", e)
+
+    async def get_inventory_item(
+        self, user_id: str, item_id: str
+    ) -> Optional[Dict[str, Any]]:
+        return await asyncio.to_thread(
+            self._get_inventory_item_sync, user_id, item_id
+        )
+
+    async def update_inventory_fields(
+        self, user_id: str, item_id: str, fields: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        return await asyncio.to_thread(
+            self._update_inventory_fields_sync, user_id, item_id, fields
+        )
+
+    async def list_user_brand_aliases(self, user_id: str) -> List[Dict[str, str]]:
+        return await asyncio.to_thread(self._list_user_brand_aliases_sync, user_id)
+
+    async def upsert_user_brand_alias(
+        self, user_id: str, alias: str, canonical: str
+    ) -> None:
+        await asyncio.to_thread(
+            self._upsert_user_brand_alias_sync, user_id, alias, canonical
+        )
+
+    async def log_brand_correction(
+        self,
+        user_id: str,
+        *,
+        item_id: Optional[str],
+        old_value: str,
+        new_value: str,
+        field: str = "brand",
+    ) -> None:
+        await asyncio.to_thread(
+            self._log_brand_correction_sync,
+            user_id,
+            item_id=item_id,
+            old_value=old_value,
+            new_value=new_value,
+            field=field,
+        )

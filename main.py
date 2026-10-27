@@ -17,13 +17,16 @@ from dotenv import load_dotenv
 from fastapi import FastAPI, Request, Response
 
 from services.ai_pipeline import extract_preferred, transcribe_preferred
+from services.assemblyai_service import AssemblyAIService, AssemblyAIServiceError
 from services.brand_catalog import get_brand_catalog
+from services.brand_learning import apply_user_aliases, resolve_brand_with_user_learning
 from services.brand_web_research import maybe_refine_brand_with_web_search
 from services.gemini_service import GeminiService, GeminiServiceError
 from services.product_category import normalize_category
 from services.openai_service import OpenAIService, OpenAIServiceError
 from services.supabase_service import SupabaseService, SupabaseServiceError
 from services.telegram_service import TelegramService, TelegramServiceError
+from dashboard_routes import router as dashboard_router
 
 # Load environment variables
 load_dotenv()
@@ -46,8 +49,18 @@ logging.getLogger("openai._base_client").setLevel(logging.WARNING)
 _openai: Optional[OpenAIService] = None
 _gemini: Optional[GeminiService] = None
 _gemini_initialized: bool = False
+_assemblyai: Optional[AssemblyAIService] = None
+_assemblyai_initialized: bool = False
 _supabase: Optional[SupabaseService] = None
 _telegram: Optional[TelegramService] = None
+
+# user_id -> {item_id, old_brand, old_quantity, old_category} after tapping Fix
+_pending_fix: dict = {}
+
+
+def dashboard_public_url() -> str:
+    """Optional public base URL for the inventory dashboard (shown in /start)."""
+    return (os.environ.get("DASHBOARD_PUBLIC_URL") or "").strip().rstrip("/")
 
 
 def get_openai() -> OpenAIService:
@@ -70,9 +83,39 @@ def get_gemini() -> Optional[GeminiService]:
     key = os.environ.get("GEMINI_API_KEY", "").strip()
     if not key:
         return None
-    model = os.environ.get("GEMINI_MODEL", "gemini-2.0-flash").strip()
-    _gemini = GeminiService(api_key=key, model=model)
+    # STT-only model (Interactions / generateContent transcribe API)
+    transcribe_model = os.environ.get(
+        "GEMINI_TRANSCRIBE_MODEL", "gemini-3.5-transcribe"
+    ).strip() or "gemini-3.5-transcribe"
+    # Inventory JSON extraction (must be a chat/flash model, not the STT model)
+    extract_model = (
+        os.environ.get("GEMINI_EXTRACT_MODEL")
+        or os.environ.get("GEMINI_MODEL")
+        or "gemini-2.0-flash"
+    ).strip()
+    _gemini = GeminiService(
+        api_key=key,
+        extract_model=extract_model,
+        transcribe_model=transcribe_model,
+    )
     return _gemini
+
+
+def get_assemblyai() -> Optional[AssemblyAIService]:
+    """Optional AssemblyAI client (third transcription backup)."""
+    global _assemblyai, _assemblyai_initialized
+    if _assemblyai_initialized:
+        return _assemblyai
+    _assemblyai_initialized = True
+    key = os.environ.get("ASSEMBLYAI_API_KEY", "").strip()
+    if not key:
+        return None
+    raw = os.environ.get("ASSEMBLYAI_SPEECH_MODELS", "").strip()
+    models = None
+    if raw:
+        models = [m.strip() for m in raw.split(",") if m.strip()]
+    _assemblyai = AssemblyAIService(api_key=key, speech_models=models)
+    return _assemblyai
 
 
 def get_supabase() -> SupabaseService:
@@ -109,7 +152,14 @@ async def lifespan(app: FastAPI):
         get_telegram()
         g = get_gemini()
         if g:
-            logger.info("Gemini enabled (model=%s)", os.environ.get("GEMINI_MODEL", "gemini-2.0-flash"))
+            logger.info(
+                "Gemini enabled (transcribe=%s extract=%s)",
+                g.transcribe_model_name,
+                g.model_name,
+            )
+        aai = get_assemblyai()
+        if aai:
+            logger.info("AssemblyAI transcription backup enabled")
         get_brand_catalog()
         logger.info("All services initialized successfully")
     except RuntimeError as e:
@@ -123,6 +173,7 @@ app = FastAPI(
     version="1.0.0",
     lifespan=lifespan,
 )
+app.include_router(dashboard_router)
 
 
 @app.middleware("http")
@@ -143,6 +194,7 @@ async def process_voice_message(
     tg = get_telegram()
     openai_svc = get_openai()
     gemini_svc = get_gemini()
+    assemblyai_svc = get_assemblyai()
     supabase_svc = get_supabase()
     brand_cat = get_brand_catalog()
 
@@ -170,15 +222,16 @@ async def process_voice_message(
         await tg.send_error_message(chat_id, "Voice file was empty. Please try again.")
         return
 
-    # 2. Transcribe (Gemini preferred, else OpenAI Whisper)
+    # 2. Transcribe: Gemini 3.5 Transcribe → OpenAI gpt-transcribe → AssemblyAI
     try:
         transcription = await transcribe_preferred(
             audio_bytes,
             "voice.ogg",
             openai_svc,
             gemini_svc,
+            assemblyai_svc,
         )
-    except (OpenAIServiceError, GeminiServiceError) as e:
+    except (OpenAIServiceError, GeminiServiceError, AssemblyAIServiceError, RuntimeError) as e:
         err_text = str(e)
         logger.error(
             "Transcription failed: %s",
@@ -226,19 +279,30 @@ async def process_voice_message(
         )
         return
 
+    # Per-user learned aliases (training layer) — soft-fail if table missing
+    try:
+        user_aliases = await supabase_svc.list_user_brand_aliases(str(user_id))
+    except Exception:
+        user_aliases = []
+
     # Normalize items (types and empty filtering)
     items = []
     for raw in raw_items:
         brand_raw = (
             str(raw.get("brand")) if raw.get("brand") is not None else ""
         ).strip()
-        brand = await maybe_refine_brand_with_web_search(
-            brand_cat,
-            brand_raw,
-            transcription,
-            openai_svc,
-            gemini_svc,
+        brand = resolve_brand_with_user_learning(
+            brand_cat, brand_raw, transcription, user_aliases
         )
+        # Web fallback only when user has not already taught an alias
+        if apply_user_aliases(brand_raw, user_aliases) is None:
+            brand = await maybe_refine_brand_with_web_search(
+                brand_cat,
+                brand_raw,
+                transcription,
+                openai_svc,
+                gemini_svc,
+            )
         flavor = (
             str(raw.get("flavor")) if raw.get("flavor") is not None else ""
         ).strip()
@@ -334,8 +398,152 @@ async def try_decrement_inventory(user_id: int, item_id: str) -> Tuple[bool, str
         return False, msg
 
 
+async def start_item_fix(user_id: int, item_id: str) -> str:
+    """Arm pending Fix; next text auto-detects brand / quantity / category."""
+    tid = (item_id or "").strip()
+    if not tid:
+        return "Missing item id."
+    row = await get_supabase().get_inventory_item(str(user_id), tid)
+    if not row:
+        return "Item not found."
+    old_brand = (row.get("brand") or "").strip()
+    old_qty = row.get("quantity")
+    old_cat = (row.get("category") or "").strip()
+    _pending_fix[str(user_id)] = {
+        "item_id": tid,
+        "old_brand": old_brand,
+        "old_quantity": old_qty,
+        "old_category": old_cat,
+    }
+    return (
+        "Send a correction (one or more fields in one message):\n"
+        f"• brand  (now: {old_brand or '—'})\n"
+        f"• quantity number  (now: {old_qty})\n"
+        f"• category e.g. 罐头/wet food/冻干  (now: {old_cat or '—'})\n"
+        "Example: 丸味 冻干\n"
+        "Or /cancel"
+    )
+
+
+async def apply_parsed_fix(
+    user_id: int,
+    item_id: str,
+    patch: dict,
+    *,
+    old_brand: str = "",
+    field: str | None = None,
+) -> Tuple[bool, str]:
+    """Apply Fix patch (one or more fields); learn brand aliases when brand changes."""
+    tid = (item_id or "").strip()
+    if not tid or not patch:
+        return False, "Nothing to update."
+    # Legacy callers sometimes passed a single-field name; ignore if patch is full
+    _ = field
+    sb = get_supabase()
+    try:
+        existing = await sb.get_inventory_item(str(user_id), tid)
+        if not existing:
+            return False, "Item not found."
+        if "brand" in patch and not old_brand:
+            old_brand = (existing.get("brand") or "").strip()
+        await sb.update_inventory_fields(str(user_id), tid, patch)
+    except SupabaseServiceError as e:
+        return False, str(e) or "Could not update."
+
+    bits: list = []
+    if "brand" in patch:
+        nb = str(patch.get("brand") or "").strip()
+        if old_brand and nb and old_brand.lower() != nb.lower():
+            await sb.upsert_user_brand_alias(str(user_id), old_brand, nb)
+        await sb.log_brand_correction(
+            str(user_id),
+            item_id=tid,
+            old_value=old_brand,
+            new_value=nb,
+            field="brand",
+        )
+        bits.append(f"brand → {nb}")
+    if "quantity" in patch:
+        q = patch.get("quantity")
+        await sb.log_brand_correction(
+            str(user_id),
+            item_id=tid,
+            old_value=str(existing.get("quantity")),
+            new_value=str(q),
+            field="quantity",
+        )
+        bits.append(f"quantity → {q}")
+    if "category" in patch:
+        c = str(patch.get("category") or "")
+        await sb.log_brand_correction(
+            str(user_id),
+            item_id=tid,
+            old_value=str(existing.get("category") or ""),
+            new_value=c,
+            field="category",
+        )
+        bits.append(f"category → {c}")
+
+    msg = "Updated " + ", ".join(bits) + "."
+    if "brand" in patch:
+        msg += " I'll remember the brand mapping for next time."
+    return True, msg
+
+
+async def handle_pending_fix_text(chat_id: int, user_id: int, text: str) -> bool:
+    """If user tapped Fix, parse next message as brand/qty/category. Returns True if consumed."""
+    from services.fix_parse import parse_fix_patch
+
+    pending = _pending_fix.pop(str(user_id), None)
+    if not pending:
+        return False
+    raw = (text or "").strip()
+    tg = get_telegram()
+    if raw.lower() in ("/cancel", "cancel"):
+        try:
+            await tg.send_message(chat_id, "Fix cancelled.", parse_mode=None)
+        except Exception:
+            logger.exception("send_message failed")
+        return True
+    patch = parse_fix_patch(raw)
+    if not patch:
+        # re-arm so they can try again
+        _pending_fix[str(user_id)] = pending
+        try:
+            await tg.send_message(
+                chat_id,
+                "Could not detect fields. Examples: 丸味 / 3 / 冻干 / 丸味 冻干",
+                parse_mode=None,
+            )
+        except Exception:
+            logger.exception("send_message failed")
+        return True
+    ok, detail = await apply_parsed_fix(
+        user_id,
+        pending.get("item_id") or "",
+        patch,
+        old_brand=pending.get("old_brand") or "",
+    )
+    try:
+        await tg.send_message(
+            chat_id,
+            detail if ok else f"Could not update: {detail}",
+            parse_mode=None,
+        )
+    except Exception:
+        logger.exception("send_message failed after fix")
+    return True
+
+
+# Back-compat names used by imports
+async def handle_pending_brand_fix_text(
+    chat_id: int, user_id: int, text: str
+) -> bool:
+    return await handle_pending_fix_text(chat_id, user_id, text)
+
+
 async def handle_callback_query(callback: dict) -> None:
-    """Inline keyboard: d:{item_id} delete row; u:{item_id} decrement qty."""
+    """Inline: d: delete; u:/o: open−1; f: start brand fix."""
     cq_id = callback.get("id")
     from_user = callback.get("from") or {}
     user_id = from_user.get("id")
@@ -355,9 +563,15 @@ async def handle_callback_query(callback: dict) -> None:
         except Exception:
             logger.exception("answerCallbackQuery failed after delete")
         return
-    if data.startswith("u:"):
+    if data.startswith("u:") or data.startswith("o:"):
         item_id = data[2:].strip()
         ok, detail = await try_decrement_inventory(int(user_id), item_id)
+        if ok and data.startswith("o:"):
+            detail = (
+                "Opened −1."
+                if "reduced" in detail.lower()
+                else detail
+            )
         try:
             await tg.answer_callback_query(
                 cq_id,
@@ -365,7 +579,23 @@ async def handle_callback_query(callback: dict) -> None:
                 show_alert=not ok,
             )
         except Exception:
-            logger.exception("answerCallbackQuery failed after decrement")
+            logger.exception("answerCallbackQuery failed after open/used")
+        return
+    if data.startswith("f:"):
+        item_id = data[2:].strip()
+        detail = await start_item_fix(int(user_id), item_id)
+        try:
+            await tg.answer_callback_query(cq_id, text="Fix…", show_alert=False)
+        except Exception:
+            logger.exception("answerCallbackQuery failed after fix arm")
+        # Message in chat is clearer than alert for the follow-up instruction
+        chat = (callback.get("message") or {}).get("chat") or {}
+        chat_id = chat.get("id")
+        if chat_id:
+            try:
+                await tg.send_message(chat_id, detail, parse_mode=None)
+            except Exception:
+                logger.exception("send_message failed for fix prompt")
         return
     try:
         await tg.answer_callback_query(
@@ -376,18 +606,18 @@ async def handle_callback_query(callback: dict) -> None:
 
 
 async def handle_used_command(chat_id: int, user_id: int, text: str) -> None:
-    """Parse /used <item_id> (supports /used@BotName)."""
+    """Parse /used or /open <item_id> (supports @BotName)."""
     raw = (text or "").strip()
     parts = raw.split(maxsplit=1)
     cmd = parts[0].split("@")[0].lower() if parts else ""
-    if cmd != "/used":
+    if cmd not in ("/used", "/open"):
         return
     tg = get_telegram()
     if len(parts) < 2 or not parts[1].strip():
         try:
             await tg.send_message(
                 chat_id,
-                "Usage: /used <item_id>\nCopy the id from the daily digest message.",
+                f"Usage: {cmd} <item_id>\nCopy the id from the daily digest, or tap Open −1 after save.",
                 parse_mode=None,
             )
         except Exception as e:
@@ -395,10 +625,83 @@ async def handle_used_command(chat_id: int, user_id: int, text: str) -> None:
         return
     item_id = parts[1].strip()
     ok, detail = await try_decrement_inventory(user_id, item_id)
+    if ok and cmd == "/open" and "reduced" in detail.lower():
+        detail = "Opened −1 (quantity reduced)."
     try:
         await tg.send_message(
             chat_id,
             detail if ok else f"Could not update: {detail}",
+            parse_mode=None,
+        )
+    except Exception as e:
+        logger.exception("send_message failed: %s", e)
+
+
+async def handle_fix_command(chat_id: int, user_id: int, text: str) -> None:
+    """
+    /fix <item_id> → then send correction
+    /fix brand|quantity|category <item_id> <value…>
+    """
+    from services.fix_parse import parse_fix_patch
+
+    raw = (text or "").strip()
+    parts = raw.split(maxsplit=1)
+    cmd = parts[0].split("@")[0].lower() if parts else ""
+    if cmd != "/fix":
+        return
+    tg = get_telegram()
+    rest = parts[1].strip() if len(parts) > 1 else ""
+    if not rest:
+        try:
+            await tg.send_message(
+                chat_id,
+                "Usage:\n"
+                "/fix <item_id>  (then send e.g. 丸味 冻干)\n"
+                "/fix brand <item_id> <name>\n"
+                "/fix quantity <item_id> <n>\n"
+                "/fix category <item_id> <罐头|wet food|…>\n"
+                "Or tap Fix under a Saved confirmation.",
+                parse_mode=None,
+            )
+        except Exception as e:
+            logger.exception("send_message failed: %s", e)
+        return
+    tokens = rest.split(maxsplit=2)
+    # /fix brand|quantity|category <uuid> <value…>
+    if tokens[0].lower() in ("brand", "quantity", "category", "qty") and len(tokens) >= 3:
+        kind = tokens[0].lower()
+        if kind == "qty":
+            kind = "quantity"
+        item_id, value = tokens[1], tokens[2]
+        patch = parse_fix_patch(f"{kind} {value}")
+        if not patch:
+            try:
+                await tg.send_message(chat_id, "Could not parse that fix.", parse_mode=None)
+            except Exception as e:
+                logger.exception("send_message failed: %s", e)
+            return
+        ok, detail = await apply_parsed_fix(user_id, item_id, patch)
+        try:
+            await tg.send_message(
+                chat_id,
+                detail if ok else f"Could not update: {detail}",
+                parse_mode=None,
+            )
+        except Exception as e:
+            logger.exception("send_message failed: %s", e)
+        return
+    # /fix <uuid> → arm pending
+    if len(tokens) == 1:
+        detail = await start_item_fix(user_id, tokens[0])
+        try:
+            await tg.send_message(chat_id, detail, parse_mode=None)
+        except Exception as e:
+            logger.exception("send_message failed: %s", e)
+        return
+    try:
+        await tg.send_message(
+            chat_id,
+            "Usage: /fix <item_id>  or  /fix brand|quantity|category <item_id> <value>",
             parse_mode=None,
         )
     except Exception as e:
@@ -500,20 +803,37 @@ async def webhook(request: Request) -> Response:
         tg = get_telegram()
         if text_lower in ("/start", "/help"):
             try:
+                dash = dashboard_public_url()
+                dash_line = (
+                    f"\n\nWeb dashboard (your inventory only):\n{dash}/dashboard"
+                    if dash
+                    else "\n\nWeb dashboard: ask the admin for the /dashboard link after Telegram Login is set up."
+                )
                 await tg.send_message(
                     chat_id,
                     "Send a voice message: brand, category (冻干/罐头/汤包/猫条/零食), flavor, best-by, quantity.\n\n"
-                    "After saving, use Delete under the confirmation to remove a wrong row.\n"
-                    "Daily digest: tap Used or /used <item_id>.",
+                    "After saving: Fix (brand/qty/category) · Open −1 · Delete\n"
+                    "Or /fix <id> · /open <id> · /used <id>."
+                    + dash_line,
                     parse_mode=None,
                 )
             except Exception as e:
                 logger.exception("Failed to send help message: %s", e)
-        elif cmd0 == "/used":
+        elif cmd0 in ("/used", "/open"):
             try:
                 await handle_used_command(chat_id, user_id, text_raw)
             except Exception:
                 logger.exception("handle_used_command failed")
+        elif cmd0 == "/fix":
+            try:
+                await handle_fix_command(chat_id, user_id, text_raw)
+            except Exception:
+                logger.exception("handle_fix_command failed")
+        else:
+            try:
+                await handle_pending_brand_fix_text(chat_id, user_id, text_raw)
+            except Exception:
+                logger.exception("pending brand fix failed")
 
     return Response(status_code=200)
 
@@ -528,7 +848,11 @@ async def health() -> dict:
 @app.get("/")
 async def root() -> dict:
     """Quick sanity check that the public URL hits this app."""
-    return {"ok": True, "service": "telegram-bot-cft"}
+    return {
+        "ok": True,
+        "service": "telegram-bot-cft",
+        "dashboard": "/dashboard",
+    }
 
 
 if __name__ == "__main__":

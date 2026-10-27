@@ -8,7 +8,7 @@ uvicorn[standard]>=0.27.0
 # HTTP client for Telegram API and file downloads
 httpx>=0.26.0
 
-# OpenAI SDK (Whisper + GPT)
+# OpenAI SDK (gpt-transcribe + GPT)
 openai>=1.12.0
 
 # Supabase client
@@ -20,15 +20,24 @@ python-dotenv>=1.0.0
 # Validation (pulled in by FastAPI)
 pydantic>=2.0.0
 
-# Audio conversion (Telegram OGG/Opus -> MP3 for Whisper)
-# Requires ffmpeg installed on system
+# Audio conversion (Telegram OGG/Opus -> MP3). Prefer system ffmpeg CLI;
+# pydub is a fallback. audioop-lts restores audioop removed in Python 3.13+.
 pydub>=0.25.0
+audioop-lts>=0.2.1; python_version >= "3.13"
 
 # Timezone handling for reminder jobs (optional but recommended)
 pytz>=2024.0
 
-# Google Gemini (optional; transcription + extraction when AI_*_PROVIDER=gemini)
+# Google Gemini (extract via google-generativeai; STT via google-genai)
 google-generativeai>=0.8.0
+google-genai>=1.0.0
+
+# AssemblyAI pre-recorded STT backup
+assemblyai>=0.35.0
 
 # Local brand fuzzy match (no LLM tokens)
 rapidfuzz>=3.0.0
+
+# Tests
+pytest>=8.0.0
+pytest-asyncio>=0.23.0

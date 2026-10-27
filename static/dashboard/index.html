@@ -1,0 +1,469 @@
+<!DOCTYPE html>
+<html lang="zh-Hans">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Cat Inventory</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=Fraunces:opsz,wght@9..144,500;9..144,600&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg: #f3efe6;
+      --bg-2: #e8e1d4;
+      --ink: #1c1915;
+      --muted: #6b645a;
+      --line: #d4ccc0;
+      --card: #faf7f1;
+      --accent: #0f6b5c;
+      --accent-ink: #f4fffb;
+      --warn: #9a4a1a;
+      --danger: #8b2e2e;
+      --ok: #2f6b3a;
+      --shadow: 0 12px 40px rgba(28, 25, 21, 0.08);
+      --radius: 14px;
+      --font: "DM Sans", system-ui, sans-serif;
+      --display: "Fraunces", Georgia, serif;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: var(--font);
+      color: var(--ink);
+      background:
+        radial-gradient(900px 420px at 10% -10%, #fff8ea 0%, transparent 55%),
+        radial-gradient(700px 380px at 100% 0%, #dceee8 0%, transparent 50%),
+        var(--bg);
+    }
+    .wrap {
+      width: min(960px, calc(100% - 2rem));
+      margin: 0 auto;
+      padding: 2.25rem 0 4rem;
+    }
+    header {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 1rem;
+      align-items: flex-end;
+      justify-content: space-between;
+      margin-bottom: 1.75rem;
+    }
+    .brand h1 {
+      font-family: var(--display);
+      font-weight: 600;
+      font-size: clamp(1.75rem, 4vw, 2.35rem);
+      letter-spacing: -0.02em;
+      margin: 0 0 0.35rem;
+    }
+    .brand p {
+      margin: 0;
+      color: var(--muted);
+      max-width: 36rem;
+      line-height: 1.45;
+    }
+    .panel {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      padding: 1.25rem 1.35rem;
+    }
+    .gate {
+      display: grid;
+      gap: 1rem;
+      place-items: start;
+      padding: 2rem 1.5rem;
+    }
+    .gate h2 {
+      font-family: var(--display);
+      font-size: 1.45rem;
+      margin: 0;
+    }
+    .muted { color: var(--muted); }
+    .row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.75rem;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 1rem;
+    }
+    .user {
+      display: flex;
+      gap: 0.65rem;
+      align-items: center;
+    }
+    .user img {
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      object-fit: cover;
+      border: 1px solid var(--line);
+    }
+    button, .btn {
+      font: inherit;
+      border: 1px solid var(--line);
+      background: #fff;
+      color: var(--ink);
+      border-radius: 999px;
+      padding: 0.45rem 0.9rem;
+      cursor: pointer;
+    }
+    button.primary {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: var(--accent-ink);
+    }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    button.ghost { background: transparent; }
+    .filters {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+    }
+    .chip {
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      background: transparent;
+      padding: 0.35rem 0.75rem;
+      font-size: 0.9rem;
+    }
+    .chip.active {
+      background: var(--ink);
+      border-color: var(--ink);
+      color: #faf7f1;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.95rem;
+    }
+    th, td {
+      text-align: left;
+      padding: 0.7rem 0.45rem;
+      border-bottom: 1px solid var(--line);
+      vertical-align: top;
+    }
+    th {
+      color: var(--muted);
+      font-weight: 500;
+      font-size: 0.8rem;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+    tr.soon td { background: rgba(154, 74, 26, 0.06); }
+    tr.overdue td { background: rgba(139, 46, 46, 0.08); }
+    .badge {
+      display: inline-block;
+      font-size: 0.75rem;
+      padding: 0.15rem 0.45rem;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      color: var(--muted);
+    }
+    .badge.warn { color: var(--warn); border-color: rgba(154,74,26,.35); }
+    .badge.danger { color: var(--danger); border-color: rgba(139,46,46,.35); }
+    .empty {
+      padding: 2rem 0.5rem;
+      color: var(--muted);
+      text-align: center;
+    }
+    .err {
+      color: var(--danger);
+      margin: 0.5rem 0 0;
+      white-space: pre-wrap;
+    }
+    .stats {
+      display: flex;
+      gap: 1rem;
+      flex-wrap: wrap;
+      margin-bottom: 0.75rem;
+      color: var(--muted);
+      font-size: 0.92rem;
+    }
+    @media (max-width: 720px) {
+      .hide-sm { display: none; }
+      th, td { padding: 0.65rem 0.3rem; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <div class="brand">
+        <h1>Cat Inventory</h1>
+        <p>用 Telegram 登录后查看自己的库存。语音录入仍在 bot 里完成。</p>
+      </div>
+      <div id="userBar" hidden></div>
+    </header>
+
+    <section id="loginPanel" class="panel gate">
+      <h2>Sign in with Telegram</h2>
+      <p class="muted">只显示你的 Telegram 账号对应的库存行。管理员密钥不会进浏览器。</p>
+      <div id="telegramWidget"></div>
+      <p id="loginHint" class="err" hidden></p>
+    </section>
+
+    <section id="appPanel" class="panel" hidden>
+      <div class="row">
+        <div class="filters" id="filters"></div>
+        <div>
+          <button type="button" class="ghost" id="refreshBtn">Refresh</button>
+        </div>
+      </div>
+      <div class="stats" id="stats"></div>
+      <div id="tableWrap"></div>
+      <p id="appErr" class="err" hidden></p>
+    </section>
+  </div>
+
+  <script>
+    const CATEGORIES = ["全部", "冻干", "罐头", "汤包", "猫条", "零食", "其他"];
+    let state = {
+      user: null,
+      items: [],
+      filter: "全部",
+      botUsername: "",
+    };
+
+    function $(id) { return document.getElementById(id); }
+
+    function daysUntil(bestBy) {
+      if (!bestBy) return null;
+      const d = new Date(String(bestBy).slice(0, 10) + "T12:00:00");
+      if (Number.isNaN(d.getTime())) return null;
+      const today = new Date();
+      today.setHours(12, 0, 0, 0);
+      return Math.round((d - today) / 86400000);
+    }
+
+    function escapeHtml(s) {
+      return String(s ?? "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;");
+    }
+
+    async function api(path, opts = {}) {
+      const res = await fetch(path, {
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json", ...(opts.headers || {}) },
+        ...opts,
+      });
+      const text = await res.text();
+      let data = null;
+      try { data = text ? JSON.parse(text) : null; } catch { data = { detail: text }; }
+      if (!res.ok) {
+        const detail = (data && (data.detail || data.message)) || res.statusText;
+        throw new Error(typeof detail === "string" ? detail : JSON.stringify(detail));
+      }
+      return data;
+    }
+
+    window.onTelegramAuth = async function (user) {
+      try {
+        $("loginHint").hidden = true;
+        const data = await api("/api/auth/telegram", {
+          method: "POST",
+          body: JSON.stringify(user),
+        });
+        state.user = data.user;
+        showApp();
+        await loadInventory();
+      } catch (e) {
+        $("loginHint").hidden = false;
+        $("loginHint").textContent = e.message || String(e);
+      }
+    };
+
+    function renderWidget() {
+      const host = $("telegramWidget");
+      host.innerHTML = "";
+      if (!state.botUsername) {
+        $("loginHint").hidden = false;
+        $("loginHint").textContent =
+          "服务器未配置 TELEGRAM_BOT_USERNAME。请在 .env 设置 bot 用户名，并在 BotFather 用 /setdomain 绑定此站点域名。";
+        return;
+      }
+      const s = document.createElement("script");
+      s.async = true;
+      s.src = "https://telegram.org/js/telegram-widget.js?22";
+      s.setAttribute("data-telegram-login", state.botUsername);
+      s.setAttribute("data-size", "large");
+      s.setAttribute("data-radius", "10");
+      s.setAttribute("data-onauth", "onTelegramAuth(user)");
+      s.setAttribute("data-request-access", "write");
+      host.appendChild(s);
+    }
+
+    function showApp() {
+      $("loginPanel").hidden = true;
+      $("appPanel").hidden = false;
+      const u = state.user || {};
+      const bar = $("userBar");
+      bar.hidden = false;
+      bar.innerHTML = `
+        <div class="user">
+          ${u.photo_url ? `<img src="${escapeHtml(u.photo_url)}" alt="" />` : ""}
+          <div>
+            <strong>${escapeHtml(u.first_name || u.username || "User")}</strong>
+            <div class="muted" style="font-size:0.85rem">id ${escapeHtml(u.user_id || "")}</div>
+          </div>
+          <button type="button" class="ghost" id="logoutBtn">Log out</button>
+        </div>`;
+      $("logoutBtn").onclick = async () => {
+        await api("/api/auth/logout", { method: "POST", body: "{}" });
+        location.reload();
+      };
+      renderFilters();
+    }
+
+    function renderFilters() {
+      const el = $("filters");
+      el.innerHTML = CATEGORIES.map((c) =>
+        `<button type="button" class="chip ${state.filter === c ? "active" : ""}" data-cat="${escapeHtml(c)}">${escapeHtml(c)}</button>`
+      ).join("");
+      el.querySelectorAll("button").forEach((btn) => {
+        btn.onclick = () => {
+          state.filter = btn.dataset.cat;
+          renderFilters();
+          renderTable();
+        };
+      });
+    }
+
+    function filteredItems() {
+      if (state.filter === "全部") return state.items;
+      if (state.filter === "其他") {
+        return state.items.filter((i) => !CATEGORIES.slice(1, -1).includes(i.category));
+      }
+      return state.items.filter((i) => i.category === state.filter);
+    }
+
+    function renderTable() {
+      const items = filteredItems();
+      const soon = state.items.filter((i) => {
+        const d = daysUntil(i.best_by);
+        return d != null && d >= 0 && d <= 7;
+      }).length;
+      const overdue = state.items.filter((i) => {
+        const d = daysUntil(i.best_by);
+        return d != null && d < 0;
+      }).length;
+      $("stats").innerHTML = `
+        <span>${state.items.length} items</span>
+        <span>${soon} expiring ≤7d</span>
+        <span>${overdue} overdue</span>
+      `;
+
+      if (!items.length) {
+        $("tableWrap").innerHTML = `<div class="empty">暂无库存。打开 Telegram bot 发一条语音录入即可。</div>`;
+        return;
+      }
+
+      const rows = items.map((i) => {
+        const d = daysUntil(i.best_by);
+        let rowClass = "";
+        let badge = "";
+        if (d != null && d < 0) {
+          rowClass = "overdue";
+          badge = `<span class="badge danger">${Math.abs(d)}d overdue</span>`;
+        } else if (d != null && d <= 7) {
+          rowClass = "soon";
+          badge = `<span class="badge warn">${d}d left</span>`;
+        } else if (d != null) {
+          badge = `<span class="badge">${d}d</span>`;
+        }
+        return `<tr class="${rowClass}">
+          <td><strong>${escapeHtml(i.brand || "—")}</strong><div class="muted">${escapeHtml(i.flavor || "")}</div></td>
+          <td>${escapeHtml(i.category || "—")}</td>
+          <td>${escapeHtml(i.best_by || "—")}<div>${badge}</div></td>
+          <td>×${escapeHtml(i.quantity ?? 0)}</td>
+          <td>
+            <button type="button" data-used="${escapeHtml(i.id)}">Used −1</button>
+          </td>
+        </tr>`;
+      }).join("");
+
+      $("tableWrap").innerHTML = `
+        <table>
+          <thead>
+            <tr>
+              <th>Brand / flavor</th>
+              <th>Category</th>
+              <th>Best by</th>
+              <th>Qty</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>${rows}</tbody>
+        </table>`;
+
+      $("tableWrap").querySelectorAll("[data-used]").forEach((btn) => {
+        btn.onclick = async () => {
+          btn.disabled = true;
+          try {
+            await api(`/api/me/inventory/${encodeURIComponent(btn.dataset.used)}/used`, {
+              method: "POST",
+              body: JSON.stringify({ delta: 1 }),
+            });
+            await loadInventory();
+          } catch (e) {
+            $("appErr").hidden = false;
+            $("appErr").textContent = e.message || String(e);
+            btn.disabled = false;
+          }
+        };
+      });
+    }
+
+    async function loadInventory() {
+      $("appErr").hidden = true;
+      try {
+        const data = await api("/api/me/inventory");
+        state.items = data.items || [];
+        if (!state.user) state.user = { user_id: data.user_id };
+        renderTable();
+      } catch (e) {
+        if (String(e.message).toLowerCase().includes("not signed") || String(e.message).includes("401")) {
+          $("loginPanel").hidden = false;
+          $("appPanel").hidden = true;
+          return;
+        }
+        $("appErr").hidden = false;
+        $("appErr").textContent = e.message || String(e);
+      }
+    }
+
+    async function boot() {
+      try {
+        const cfg = await api("/api/dashboard/config");
+        state.botUsername = cfg.bot_username || "";
+        if (cfg.login_hint) {
+          $("loginHint").hidden = false;
+          $("loginHint").textContent = cfg.login_hint;
+        }
+      } catch (e) {
+        $("loginHint").hidden = false;
+        $("loginHint").textContent = e.message || String(e);
+      }
+      renderWidget();
+
+      try {
+        const me = await api("/api/me");
+        state.user = { user_id: me.user_id, first_name: "Signed in" };
+        showApp();
+        await loadInventory();
+      } catch {
+        /* stay on login */
+      }
+
+      $("refreshBtn").onclick = () => loadInventory();
+    }
+
+    boot();
+  </script>
+</body>
+</html>

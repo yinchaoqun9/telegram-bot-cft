@@ -1,13 +1,17 @@
 """
-OpenAI Service - Handles Whisper transcription and GPT structured extraction.
+OpenAI Service - Handles audio transcription and GPT structured extraction.
 
-- Whisper API: voice-to-text (with OGG/Opus -> MP3 conversion for Telegram)
+- Audio transcription: gpt-transcribe (whisper-1 deprecated, shutdown 2027-02-26)
 - GPT: extract structured inventory data from transcription
 - All operations support async via AsyncOpenAI.
 """
 
 import io
 import logging
+import os
+import shutil
+import subprocess
+import tempfile
 from typing import Any, Dict, List, Optional, Tuple
 
 from openai import AsyncOpenAI
@@ -35,7 +39,8 @@ OUTPUT FORMAT (VERY IMPORTANT):
   - "flavor"   (string or null)
   - "category" (string or null) — product type. Use ONE of these Chinese labels when possible:
     冻干 | 罐头 | 汤包 | 猫条 | 零食
-    (freeze-dried / canned tin / soup pouch / cat stick / treats). If unclear, null.
+    (freeze-dried / wet food·罐头 / soup pouch / cat stick / treats).
+    If the user does not say a type, prefer 罐头 (wet food), not null.
   - "best_by"  (string or null, format YYYY-MM-DD)
   - "quantity" (integer or null)
 - No extra keys, no wrapper object, no explanations, no markdown.
@@ -49,7 +54,8 @@ INTERPRETATION RULES:
   the name is uncommon. Only use null if there is truly no brand-like name.
 - flavor: flavor or variant (e.g. "chicken", "salmon", "鸡肉"). If the only
   specific name sounds like a brand, put it in "brand", not "flavor".
-- category: listen for 冻干、罐头、汤包、猫条、零食 or English equivalents above.
+- category: listen for 冻干、罐头/湿粮/wet food、汤包、猫条、零食 or English equivalents.
+  Default to 罐头 when unspecified.
 - best_by: expiration or best-by date; normalize to YYYY-MM-DD when possible.
 - quantity: number of units (cans/bags/etc.), convert words like "two" or "两"
   into an integer.
@@ -73,51 +79,110 @@ STRICT OUTPUT:
 Again: return ONLY a JSON array of item objects, nothing else."""
 
 
+def _convert_ogg_to_mp3_ffmpeg(audio_bytes: bytes) -> bytes:
+    """Convert OGG/Opus → MP3 via ffmpeg CLI (no pydub / audioop needed)."""
+    ffmpeg = shutil.which("ffmpeg")
+    if not ffmpeg:
+        raise FileNotFoundError(
+            "ffmpeg not found. Install ffmpeg for OGG conversion (e.g. brew install ffmpeg)"
+        )
+
+    in_path = out_path = None
+    try:
+        with tempfile.NamedTemporaryFile(suffix=".ogg", delete=False) as inp:
+            inp.write(audio_bytes)
+            in_path = inp.name
+        out_fd, out_path = tempfile.mkstemp(suffix=".mp3")
+        os.close(out_fd)
+
+        proc = subprocess.run(
+            [
+                ffmpeg,
+                "-y",
+                "-i",
+                in_path,
+                "-acodec",
+                "libmp3lame",
+                "-q:a",
+                "4",
+                out_path,
+            ],
+            capture_output=True,
+            check=False,
+        )
+        if proc.returncode != 0:
+            err = (proc.stderr or b"").decode("utf-8", errors="replace")[-500:]
+            raise RuntimeError(f"ffmpeg failed (code {proc.returncode}): {err}")
+        with open(out_path, "rb") as f:
+            mp3 = f.read()
+        if not mp3:
+            raise RuntimeError("ffmpeg produced empty MP3")
+        return mp3
+    finally:
+        for path in (in_path, out_path):
+            if path:
+                try:
+                    os.unlink(path)
+                except OSError:
+                    pass
+
+
+def _convert_ogg_to_mp3_pydub(audio_bytes: bytes) -> bytes:
+    """Fallback via pydub (needs audioop on older Python; audioop-lts on 3.13+)."""
+    from pydub import AudioSegment
+
+    ogg_io = io.BytesIO(audio_bytes)
+    try:
+        segment = AudioSegment.from_ogg(ogg_io)
+    except Exception:
+        ogg_io.seek(0)
+        segment = AudioSegment.from_file(ogg_io, format="ogg")
+    mp3_io = io.BytesIO()
+    segment.export(mp3_io, format="mp3")
+    return mp3_io.getvalue()
+
+
 def _convert_ogg_to_mp3(audio_bytes: bytes) -> bytes:
     """
-    Convert Telegram OGG/Opus audio to MP3 for Whisper API.
+    Convert Telegram OGG/Opus audio to MP3 for STT APIs.
 
-    Whisper does not support OGG/Opus. Telegram voice messages use OGG container
-    with Opus codec. Requires pydub and ffmpeg.
-
-    Args:
-        audio_bytes: Raw OGG audio bytes
-
-    Returns:
-        MP3 bytes
-
-    Raises:
-        ImportError: If pydub not installed
-        Exception: On conversion failure
+    Prefer ffmpeg CLI (works on Python 3.13+ where stdlib audioop was removed).
+    Fall back to pydub if ffmpeg is unavailable.
     """
+    # 1) ffmpeg — reliable path for local + Docker
     try:
-        from pydub import AudioSegment
-    except ImportError as e:
-        logger.error("pydub not installed - cannot convert OGG to MP3. Install: pip install pydub")
-        raise ImportError(
-            "pydub required for Telegram OGG voice. Install pydub and ffmpeg."
-        ) from e
+        return _convert_ogg_to_mp3_ffmpeg(audio_bytes)
+    except FileNotFoundError as e:
+        logger.warning("ffmpeg CLI unavailable (%s); trying pydub", e)
+        ffmpeg_missing = e
+    except Exception as e:
+        logger.warning("ffmpeg conversion failed (%s); trying pydub", e)
+        ffmpeg_missing = e
 
+    # 2) pydub fallback
     try:
-        ogg_io = io.BytesIO(audio_bytes)
-        # Telegram voice: OGG container, Opus codec. Try from_ogg first.
-        try:
-            segment = AudioSegment.from_ogg(ogg_io)
-        except Exception:
-            ogg_io.seek(0)
-            segment = AudioSegment.from_file(ogg_io, format="ogg")
-        mp3_io = io.BytesIO()
-        segment.export(mp3_io, format="mp3")
-        return mp3_io.getvalue()
+        return _convert_ogg_to_mp3_pydub(audio_bytes)
+    except ImportError as e:
+        logger.error(
+            "pydub/audioop unavailable. Install: pip install pydub audioop-lts; "
+            "and ensure ffmpeg is on PATH."
+        )
+        raise OpenAIServiceError(
+            "Audio conversion failed: need ffmpeg on PATH "
+            "(or pydub + audioop-lts on Python 3.13+)."
+        ) from e
     except FileNotFoundError as e:
         if "ffmpeg" in str(e).lower() or "ffprobe" in str(e).lower():
-            msg = "ffmpeg not found. Install ffmpeg for OGG conversion (e.g. brew install ffmpeg)"
-            logger.error("%s: %s", msg, e)
-            raise OpenAIServiceError(msg) from e
-        raise
+            raise OpenAIServiceError(
+                "ffmpeg not found. Install ffmpeg for OGG conversion "
+                "(e.g. brew install ffmpeg)"
+            ) from e
+        raise OpenAIServiceError(f"Audio conversion failed: {e}") from e
     except Exception as e:
         logger.exception("OGG to MP3 conversion failed: %s", e)
-        raise OpenAIServiceError(f"Audio conversion failed: {e}") from e
+        raise OpenAIServiceError(
+            f"Audio conversion failed: {e} (ffmpeg earlier: {ffmpeg_missing})"
+        ) from e
 
 
 def _prepare_audio_for_whisper(
@@ -187,22 +252,24 @@ class OpenAIService:
 
         try:
             logger.debug(
-                "Sending audio to Whisper (size=%d, format=%s)",
+                "Sending audio to OpenAI STT (size=%d, format=%s, model=%s)",
                 len(audio_bytes),
                 eff_filename,
+                os.environ.get("OPENAI_TRANSCRIBE_MODEL", "gpt-transcribe"),
             )
             response = await self.client.audio.transcriptions.create(
-                model="whisper-1",
+                model=os.environ.get("OPENAI_TRANSCRIBE_MODEL", "gpt-transcribe").strip()
+                or "gpt-transcribe",
                 file=audio_file,
                 response_format="text",
             )
         except Exception as e:
-            logger.exception("Whisper API error: %s", e)
+            logger.exception("OpenAI transcription API error: %s", e)
             raise OpenAIServiceError(f"Transcription failed: {e}") from e
 
         transcription = getattr(response, "text", None) or str(response)
         if not transcription or not transcription.strip():
-            logger.warning("Whisper returned empty transcription")
+            logger.warning("OpenAI STT returned empty transcription")
             return ""
 
         logger.info("Transcription completed, length=%d chars", len(transcription))

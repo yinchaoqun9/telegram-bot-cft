@@ -245,16 +245,36 @@ class TelegramService:
         if not saved_rows:
             return
 
-        footer = "\n\nUse Delete below to remove a mistaken entry."
+        footer = (
+            "\n\nTap Fix, then send a brand name, a number (qty), or a category "
+            "(罐头/wet food/冻干…).\n"
+            "Open −1 = opened one pack/can. Delete removes the row."
+        )
 
         def _row_keyboard(rows: List[Dict[str, Any]]) -> List[List[Dict[str, str]]]:
             kb: List[List[Dict[str, str]]] = []
+            multi = len(rows) > 1
             for idx, row in enumerate(rows):
                 iid = str(row.get("id") or "").strip()
-                if not iid or len(f"d:{iid}".encode("utf-8")) > 64:
+                if not iid:
                     continue
-                label = "Delete" if len(rows) == 1 else f"Delete #{idx + 1}"
-                kb.append([{"text": label, "callback_data": f"d:{iid}"}])
+                d_cb = f"d:{iid}"
+                f_cb = f"f:{iid}"
+                o_cb = f"o:{iid}"
+                if (
+                    len(d_cb.encode("utf-8")) > 64
+                    or len(f_cb.encode("utf-8")) > 64
+                    or len(o_cb.encode("utf-8")) > 64
+                ):
+                    continue
+                suffix = f" #{idx + 1}" if multi else ""
+                kb.append(
+                    [
+                        {"text": f"Fix{suffix}", "callback_data": f_cb},
+                        {"text": f"Open −1{suffix}", "callback_data": o_cb},
+                        {"text": f"Delete{suffix}", "callback_data": d_cb},
+                    ]
+                )
             return kb
 
         if len(saved_rows) == 1:
@@ -314,13 +334,21 @@ class TelegramService:
         Returns:
             List of update objects
         """
-        async with httpx.AsyncClient(timeout=timeout + 5) as client:
-            resp = await client.get(
-                f"{self.base_url}/getUpdates",
-                params={"offset": offset, "timeout": timeout},
-            )
-            resp.raise_for_status()
-            data = resp.json()
+        # Long-poll can run full `timeout` seconds; leave headroom for network jitter.
+        async with httpx.AsyncClient(timeout=timeout + 25) as client:
+            try:
+                resp = await client.get(
+                    f"{self.base_url}/getUpdates",
+                    params={"offset": offset, "timeout": timeout},
+                )
+                resp.raise_for_status()
+                data = resp.json()
+            except httpx.TimeoutException as e:
+                # Empty long-poll / brief network stall — treat as no updates.
+                logger.warning("getUpdates timeout (will retry): %s", e)
+                return []
+            except httpx.HTTPError as e:
+                raise TelegramServiceError(f"getUpdates HTTP error: {e}") from e
 
         if not data.get("ok"):
             raise TelegramServiceError(f"getUpdates failed: {data}")

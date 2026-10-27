@@ -39,6 +39,8 @@ async def main() -> None:
     from main import (
         get_supabase,
         handle_callback_query,
+        handle_fix_command,
+        handle_pending_brand_fix_text,
         handle_used_command,
         process_voice_message,
     )
@@ -67,6 +69,11 @@ async def main() -> None:
         except TelegramServiceError as e:
             logger.error("getUpdates failed: %s", e)
             await asyncio.sleep(5)
+            continue
+        except Exception as e:
+            # Network blips / httpx ReadTimeout on long-poll — keep running
+            logger.warning("getUpdates network error (%s); retrying in 3s", e)
+            await asyncio.sleep(3)
             continue
 
         for update in updates:
@@ -110,15 +117,28 @@ async def main() -> None:
                     text_lower.split(maxsplit=1)[0].split("@")[0] if text_lower else ""
                 )
                 if text_lower in ("/start", "/help"):
+                    from main import dashboard_public_url
+
+                    dash = dashboard_public_url()
+                    dash_line = (
+                        f"\n\nWeb dashboard:\n{dash}/dashboard"
+                        if dash
+                        else "\n\nWeb dashboard: /dashboard on your bot host (Telegram Login)."
+                    )
                     await tg.send_message(
                         chat_id,
                         "Send a voice message: brand, category (冻干/罐头/汤包/猫条/零食), flavor, best-by, quantity.\n\n"
-                        "After saving, use Delete under the confirmation to remove a wrong row.\n"
-                        "Daily digest: tap Used or /used <item_id>.",
+                        "After saving: Fix (brand/qty/category) · Open −1 · Delete\n"
+                        "/fix <id> · /open <id> · /used <id>."
+                        + dash_line,
                         parse_mode=None,
                     )
-                elif cmd0 == "/used":
+                elif cmd0 in ("/used", "/open"):
                     await handle_used_command(chat_id, user_id, text_raw)
+                elif cmd0 == "/fix":
+                    await handle_fix_command(chat_id, user_id, text_raw)
+                else:
+                    await handle_pending_brand_fix_text(chat_id, user_id, text_raw)
 
 
 if __name__ == "__main__":
