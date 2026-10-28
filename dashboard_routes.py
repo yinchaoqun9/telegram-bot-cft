@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
-from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 
 from services.dashboard_auth import (
@@ -68,12 +68,16 @@ def require_user(request: Request) -> str:
         raise HTTPException(status_code=401, detail=str(e)) from e
 
 
-@router.get("/dashboard", response_class=HTMLResponse)
-async def dashboard_page() -> FileResponse:
+@router.get("/dashboard")
+async def dashboard_page() -> HTMLResponse:
+    """Read HTML as UTF-8 text — avoid FileResponse + HTMLResponse mismatch mojibake."""
     index = STATIC_DIR / "index.html"
     if not index.is_file():
         raise HTTPException(status_code=500, detail="Dashboard UI missing")
-    return FileResponse(index, media_type="text/html; charset=utf-8")
+    return HTMLResponse(
+        content=index.read_text(encoding="utf-8"),
+        media_type="text/html; charset=utf-8",
+    )
 
 
 @router.get("/api/dashboard/config")
