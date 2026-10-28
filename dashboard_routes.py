@@ -74,8 +74,9 @@ async def dashboard_page() -> HTMLResponse:
     index = STATIC_DIR / "index.html"
     if not index.is_file():
         raise HTTPException(status_code=500, detail="Dashboard UI missing")
+    html = index.read_text(encoding="utf-8")
     return HTMLResponse(
-        content=index.read_text(encoding="utf-8"),
+        content=html,
         media_type="text/html; charset=utf-8",
     )
 

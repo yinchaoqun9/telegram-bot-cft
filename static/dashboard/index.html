@@ -7,7 +7,7 @@
   <title>Pet Pantry</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=Fraunces:opsz,wght@9..144,500;9..144,600&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=Fraunces:opsz,wght@9..144,500;9..144,600&family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet" />
   <style>
     :root {
       --bg: #f3efe6;
@@ -21,8 +21,9 @@
       --danger: #8b2e2e;
       --shadow: 0 12px 40px rgba(28, 25, 21, 0.08);
       --radius: 14px;
-      --font: "DM Sans", system-ui, sans-serif;
-      --display: "Fraunces", Georgia, serif;
+      /* Latin display fonts first, then explicit CJK fallbacks (DM Sans alone garbles Chinese). */
+      --font: "DM Sans", "Noto Sans SC", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
+      --display: "Fraunces", "Noto Sans SC", "PingFang SC", "Hiragino Sans GB", "Songti SC", Georgia, serif;
     }
     * { box-sizing: border-box; }
     body {
@@ -182,8 +183,7 @@
       color: var(--muted);
       font-weight: 500;
       font-size: 0.8rem;
-      text-transform: uppercase;
-      letter-spacing: 0.04em;
+      letter-spacing: 0.02em;
     }
     tr.soon td { background: rgba(154, 74, 26, 0.06); }
     tr.overdue td { background: rgba(139, 46, 46, 0.08); }
@@ -228,8 +228,7 @@
     .radar-col h3 {
       margin: 0 0 0.55rem;
       font-size: 0.82rem;
-      letter-spacing: 0.04em;
-      text-transform: uppercase;
+      letter-spacing: 0.02em;
       color: var(--muted);
       font-weight: 600;
     }
@@ -302,8 +301,7 @@
     }
     .section-label {
       font-size: 0.8rem;
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
+      letter-spacing: 0.02em;
       color: var(--muted);
       margin: 0 0 0.35rem;
     }
