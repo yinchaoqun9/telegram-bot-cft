@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Cat Inventory</title>
+  <title>Pet Pantry</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=Fraunces:opsz,wght@9..144,500;9..144,600&display=swap" rel="stylesheet" />
@@ -18,7 +18,6 @@
       --accent-ink: #f4fffb;
       --warn: #9a4a1a;
       --danger: #8b2e2e;
-      --ok: #2f6b3a;
       --shadow: 0 12px 40px rgba(28, 25, 21, 0.08);
       --radius: 14px;
       --font: "DM Sans", system-ui, sans-serif;
@@ -47,6 +46,31 @@
       align-items: flex-end;
       justify-content: space-between;
       margin-bottom: 1.75rem;
+    }
+    .header-right {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.75rem;
+      align-items: center;
+      justify-content: flex-end;
+    }
+    .lang-toggle {
+      display: inline-flex;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      overflow: hidden;
+      background: #fff;
+    }
+    .lang-toggle button {
+      border: none;
+      border-radius: 0;
+      background: transparent;
+      padding: 0.35rem 0.7rem;
+      font-size: 0.85rem;
+    }
+    .lang-toggle button.active {
+      background: var(--ink);
+      color: #faf7f1;
     }
     .brand h1 {
       font-family: var(--display);
@@ -185,7 +209,10 @@
     .radar-grid {
       display: grid;
       gap: 0.85rem;
-      grid-template-columns: repeat(3, minmax(0, 1fr));
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+    @media (min-width: 900px) {
+      .radar-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
     }
     @media (max-width: 820px) {
       .radar-grid { grid-template-columns: 1fr; }
@@ -288,41 +315,53 @@
   <div class="wrap">
     <header>
       <div class="brand">
-        <h1>Cat Inventory</h1>
-        <p>先看这周该吃什么、该买什么；明细表留给核对。语音仍在 Telegram bot 录入。</p>
+        <h1>Pet Pantry</h1>
+        <p id="brandSub"></p>
       </div>
-      <div id="userBar" hidden></div>
+      <div class="header-right">
+        <div class="lang-toggle" role="group" aria-label="Language">
+          <button type="button" id="langZh" data-lang="zh">中文</button>
+          <button type="button" id="langEn" data-lang="en">EN</button>
+        </div>
+        <div id="userBar" hidden></div>
+      </div>
     </header>
 
     <section id="loginPanel" class="panel gate">
-      <h2>Sign in with Telegram</h2>
-      <p class="muted">只显示你的 Telegram 账号对应的库存行。管理员密钥不会进浏览器。</p>
+      <h2 id="loginTitle"></h2>
+      <p class="muted" id="loginBody"></p>
       <div id="telegramWidget"></div>
       <p id="loginHint" class="err" hidden></p>
     </section>
 
     <div id="appPanel" class="stack" hidden>
+      <section class="panel" id="householdPanel">
+        <p class="section-label" id="hhLabel">Household</p>
+        <p class="block-sub" id="hhSub"></p>
+        <div id="hhBody"></div>
+      </section>
+
       <section class="panel" id="kitchenPanel">
-        <p class="section-label">厨房状态</p>
-        <p class="kitchen-summary" id="kitchenSummary">加载中…</p>
+        <p class="section-label" id="kitchenLabel"></p>
+        <p class="kitchen-summary" id="kitchenSummary"></p>
         <div class="kpi-row" id="kitchenKpis"></div>
         <div class="mix-bar" id="mixBar" aria-hidden="true"></div>
         <div class="mix-legend" id="mixLegend"></div>
       </section>
 
       <section class="panel" id="radarPanel">
-        <h2 class="block-title">临期雷达</h2>
-        <p class="block-sub">这周先吃这些。点 Open −1 表示开了一袋/一罐。</p>
+        <h2 class="block-title" id="radarTitle"></h2>
+        <p class="block-sub" id="radarSub"></p>
         <div class="radar-grid" id="radarGrid"></div>
       </section>
 
       <section class="panel" id="restockPanel">
         <div class="row" style="margin-bottom:0.35rem">
           <div>
-            <h2 class="block-title">补货清单</h2>
-            <p class="block-sub" style="margin-bottom:0">按品类库存阈值估算；勾选后可复制发到备忘录。</p>
+            <h2 class="block-title" id="restockTitle"></h2>
+            <p class="block-sub" style="margin-bottom:0" id="restockSub"></p>
           </div>
-          <button type="button" class="primary" id="copyRestockBtn">复制清单</button>
+          <button type="button" class="primary" id="copyRestockBtn"></button>
         </div>
         <ul class="restock-list" id="restockList"></ul>
         <p class="hint-line" id="restockHint"></p>
@@ -331,10 +370,10 @@
       <section class="panel">
         <div class="row">
           <div>
-            <p class="section-label">明细核对</p>
+            <p class="section-label" id="detailLabel"></p>
             <div class="filters" id="filters"></div>
           </div>
-          <button type="button" class="ghost" id="refreshBtn">Refresh</button>
+          <button type="button" class="ghost" id="refreshBtn"></button>
         </div>
         <div id="tableWrap"></div>
         <p id="appErr" class="err" hidden></p>
@@ -343,16 +382,192 @@
   </div>
 
   <script>
-    const CATEGORIES = ["全部", "冻干", "罐头", "汤包", "猫条", "零食", "其他"];
+    const CAT_KEYS = ["冻干", "罐头", "汤包", "猫条", "零食", "猫砂", "药品", "其他"];
     const MIX_COLORS = {
       "冻干": "#0f6b5c",
       "罐头": "#9a4a1a",
       "汤包": "#3d6ea5",
       "猫条": "#6b4c9a",
       "零食": "#5a6b3a",
+      "猫砂": "#8a7355",
+      "药品": "#8b2e2e",
       "其他": "#6b645a",
     };
-    const DEFAULT_THRESHOLDS = { "罐头": 6, "冻干": 3, "汤包": 2, "猫条": 2, "零食": 2, "其他": 2 };
+    const DEFAULT_THRESHOLDS = {
+      "罐头": 6, "冻干": 3, "汤包": 2, "猫条": 2, "零食": 2,
+      "猫砂": 1, "药品": 1, "其他": 2,
+    };
+    const DEFAULT_OPEN_SHELF = {
+      "罐头": 2, "汤包": 2, "猫条": 3, "冻干": 30, "零食": 14,
+      "猫砂": 60, "药品": 90, "其他": 7,
+    };
+
+    const I18N = {
+      zh: {
+        brandSub: "宠物柜：这周该开/该扔、下周该买；明细留给核对。语音在 Telegram 录入猫狗粮、猫砂和药品。",
+        loginTitle: "用 Telegram 登录",
+        loginBody: "只显示你的 Telegram 账号对应的库存。管理员密钥不会进浏览器。",
+        logout: "退出",
+        kitchenLabel: "宠物柜状态",
+        loading: "加载中…",
+        kitchenEmpty: "还没有库存。去 Telegram 发一条语音开始记。",
+        wetOk: "湿粮还够",
+        wetLow: "湿粮偏少",
+        dryOk: "冻干还行",
+        dryLow: "冻干偏少",
+        medOk: "药品还行",
+        medLow: "药品偏少",
+        soonN: (n) => `${n} 样一周内到期`,
+        overdueN: (n) => `${n} 样已过期`,
+        openedN: (n) => `${n} 样已开封需留意`,
+        kpiTotal: "总件数",
+        kpiSoon: "临期≤7d",
+        kpiOverdue: "已过期",
+        kpiOpened: "已开封",
+        kpiSku: "SKU",
+        lowTag: "偏低",
+        radarTitle: "临期 / 开封雷达",
+        radarSub: "这周先处理这些。点「开封 −1」会记录开封时间并减库存。",
+        colOverdue: "已过期",
+        colSoon: "≤7 天 · 这周先吃",
+        colLater: "8–15 天",
+        colOpened: "已开封",
+        emptyOverdue: "没有过期项，很好。",
+        emptySoon: "一周内没有临期。",
+        emptyLater: "半个月内都很从容。",
+        emptyOpened: "没有跟踪中的开封项。",
+        daysOverdue: (n) => `过期 ${n} 天`,
+        daysLeft: (n) => `剩 ${n} 天`,
+        openDaysLeft: (n) => (n < 0 ? `开封后超期 ${Math.abs(n)} 天` : `开封后剩 ${n} 天`),
+        openBtn: "开封 −1",
+        restockTitle: "补货清单",
+        restockSub: "按品类阈值估算。勾选后复制到备忘录或购物清单——bot 不会下单。",
+        copyList: "复制清单",
+        restockOk: "品类库存都还够，暂时不用补货。",
+        suggestBuy: (n) => `建议补 ${n}`,
+        critical: "即将断粮",
+        stockBelow: (have, th) => `库存 ${have}，低于建议 ${th}`,
+        afterSoon: (soonQty, after, th) => `一周内临期约 ${soonQty}，之后只剩 ${after}（建议 ≥${th}）`,
+        priority: (cat, n) => `优先：${cat}（建议 ${n}）`,
+        copied: "已复制到剪贴板。",
+        nothingChecked: "没有勾选的补货项。",
+        copyTitle: "宠物柜补货清单：",
+        detailLabel: "明细核对",
+        refresh: "刷新",
+        emptyTable: "暂无库存。打开 Telegram bot 发一条语音录入即可。",
+        thBrand: "品牌 / 名称",
+        thCat: "品类",
+        thBestBy: "保质期",
+        thQty: "数量",
+        usedBtn: "用掉 −1",
+        filterAll: "全部",
+        cats: {
+          "冻干": "冻干",
+          "罐头": "罐头",
+          "汤包": "汤包",
+          "猫条": "猫条",
+          "零食": "零食",
+          "猫砂": "猫砂",
+          "药品": "药品",
+          "其他": "其他",
+        },
+        botMissing:
+          "服务器未配置 TELEGRAM_BOT_USERNAME。请在 .env 设置 bot 用户名，并在 BotFather 用 /setdomain 绑定此站点域名。",
+        signedIn: "已登录",
+        hhLabel: "家庭柜",
+        hhSolo: "当前是单人柜。创建后生成邀请码，最多 2 人免费；临期 digest 会发给每一位成员。语音/开封提醒默认关闭，可在此打开。",
+        hhShared: (code, n, max) => `共享中 · 邀请码 ${code} · ${n}/${max} 人。临期 digest 双方都会收到。`,
+        hhCreate: "创建共享柜",
+        hhJoin: "加入",
+        hhLeave: "退出共享",
+        hhCodePh: "PET-XXXX",
+        hhNotifyOn: "打开伙伴变更提醒",
+        hhNotifyOff: "关闭伙伴变更提醒",
+        hhNotifyHint: "变更提醒：语音入库 / Open / Used（可关）。Digest 始终发送。",
+      },
+      en: {
+        brandSub: "Pet pantry: what to open/toss this week and what to buy next. Voice-log cat/dog food, litter, and meds in Telegram.",
+        loginTitle: "Sign in with Telegram",
+        loginBody: "Only your Telegram account’s inventory is shown. Admin keys never enter the browser.",
+        logout: "Log out",
+        kitchenLabel: "Pantry status",
+        loading: "Loading…",
+        kitchenEmpty: "No stock yet. Send a voice note to the Telegram bot to start.",
+        wetOk: "Wet food looks fine",
+        wetLow: "Wet food is low",
+        dryOk: "Freeze-dried looks fine",
+        dryLow: "Freeze-dried is low",
+        medOk: "Meds look fine",
+        medLow: "Meds are low",
+        soonN: (n) => `${n} item(s) due within a week`,
+        overdueN: (n) => `${n} overdue`,
+        openedN: (n) => `${n} opened lot(s) to watch`,
+        kpiTotal: "Units",
+        kpiSoon: "Due ≤7d",
+        kpiOverdue: "Overdue",
+        kpiOpened: "Opened",
+        kpiSku: "SKUs",
+        lowTag: "low",
+        radarTitle: "Expiry / opened radar",
+        radarSub: "Handle these first. Open −1 stamps opened time and reduces qty.",
+        colOverdue: "Overdue",
+        colSoon: "≤7 days · use this week",
+        colLater: "8–15 days",
+        colOpened: "Opened",
+        emptyOverdue: "Nothing overdue — nice.",
+        emptySoon: "Nothing due within a week.",
+        emptyLater: "Nothing urgent in the next two weeks.",
+        emptyOpened: "No opened lots being tracked.",
+        daysOverdue: (n) => `${n}d overdue`,
+        daysLeft: (n) => `${n}d left`,
+        openDaysLeft: (n) => (n < 0 ? `${Math.abs(n)}d past open window` : `${n}d left after open`),
+        openBtn: "Open −1",
+        restockTitle: "Restock list",
+        restockSub: "Estimated from category thresholds. Copy into Notes or a shopping list — the bot does not place orders.",
+        copyList: "Copy list",
+        restockOk: "Stock looks fine across categories — nothing to buy for now.",
+        suggestBuy: (n) => `Buy ~${n}`,
+        critical: "About to run out",
+        stockBelow: (have, th) => `Have ${have}, below target ${th}`,
+        afterSoon: (soonQty, after, th) => `~${soonQty} due soon; ~${after} left after (target ≥${th})`,
+        priority: (cat, n) => `Priority: ${cat} (buy ~${n})`,
+        copied: "Copied to clipboard.",
+        nothingChecked: "No checked items to copy.",
+        copyTitle: "Pet pantry restock list:",
+        detailLabel: "Detail check",
+        refresh: "Refresh",
+        emptyTable: "No inventory yet. Open the Telegram bot and send a voice note.",
+        thBrand: "Brand / name",
+        thCat: "Category",
+        thBestBy: "Best by",
+        thQty: "Qty",
+        usedBtn: "Used −1",
+        filterAll: "All",
+        cats: {
+          "冻干": "Freeze-dried",
+          "罐头": "Cans / wet",
+          "汤包": "Soup pouches",
+          "猫条": "Cat sticks",
+          "零食": "Treats",
+          "猫砂": "Litter",
+          "药品": "Meds",
+          "其他": "Other",
+        },
+        botMissing:
+          "TELEGRAM_BOT_USERNAME is not set. Add the bot username in .env and bind this host with BotFather /setdomain.",
+        signedIn: "Signed in",
+        hhLabel: "Household",
+        hhSolo: "You're on a solo pantry. Create a share code (free for 2). Expiry digests go to every member. Voice/Open alerts stay off until you enable them.",
+        hhShared: (code, n, max) => `Shared · code ${code} · ${n}/${max} members. Expiry digests go to everyone.`,
+        hhCreate: "Create shared pantry",
+        hhJoin: "Join",
+        hhLeave: "Leave",
+        hhCodePh: "PET-XXXX",
+        hhNotifyOn: "Enable partner change alerts",
+        hhNotifyOff: "Disable partner change alerts",
+        hhNotifyHint: "Change alerts: voice / Open / Used (optional). Digests always send.",
+      },
+    };
 
     let state = {
       user: null,
@@ -360,10 +575,16 @@
       filter: "全部",
       botUsername: "",
       thresholds: { ...DEFAULT_THRESHOLDS },
+      openShelf: { ...DEFAULT_OPEN_SHELF },
       restockChecked: {},
+      household: null,
+      lang: localStorage.getItem("dashboard_lang") === "en" ? "en" : "zh",
+      serverLoginHint: "",
     };
 
     function $(id) { return document.getElementById(id); }
+    function t() { return I18N[state.lang]; }
+    function catLabel(key) { return t().cats[key] || key; }
 
     function daysUntil(bestBy) {
       if (!bestBy) return null;
@@ -399,13 +620,51 @@
 
     function catKey(item) {
       const c = (item.category || "").trim();
-      if (CATEGORIES.slice(1, -1).includes(c)) return c;
+      if (CAT_KEYS.slice(0, -1).includes(c)) return c;
       return "其他";
     }
 
     function qtyOf(item) {
       const n = Number(item.quantity);
       return Number.isFinite(n) ? n : 0;
+    }
+
+    function itemTitle(item) {
+      const cat = catKey(item);
+      const brand = (item.brand || "").trim();
+      const flavor = (item.flavor || "").trim();
+      if (cat === "药品") {
+        return flavor || brand || "—";
+      }
+      return brand || flavor || "—";
+    }
+
+    function itemSubtitle(item) {
+      const cat = catKey(item);
+      const brand = (item.brand || "").trim();
+      const flavor = (item.flavor || "").trim();
+      if (cat === "药品") {
+        return [brand, catLabel(cat)].filter(Boolean).join(" · ");
+      }
+      return [catLabel(cat), flavor && flavor !== itemTitle(item) ? flavor : ""]
+        .filter(Boolean)
+        .join(" · ");
+    }
+
+    function openShelfFor(item) {
+      const cat = catKey(item);
+      return Number(state.openShelf[cat] ?? DEFAULT_OPEN_SHELF[cat] ?? 7);
+    }
+
+    function daysAfterOpenLeft(item) {
+      if (!item.opened_at) return null;
+      const opened = new Date(item.opened_at);
+      if (Number.isNaN(opened.getTime())) return null;
+      const today = new Date();
+      today.setHours(12, 0, 0, 0);
+      opened.setHours(12, 0, 0, 0);
+      const elapsed = Math.round((today - opened) / 86400000);
+      return openShelfFor(item) - elapsed;
     }
 
     function escapeHtml(s) {
@@ -447,6 +706,60 @@
       }
     }
 
+    async function markOpen(itemId, btn) {
+      if (btn) btn.disabled = true;
+      try {
+        await api(`/api/me/inventory/${encodeURIComponent(itemId)}/open`, {
+          method: "POST",
+          body: JSON.stringify({ delta: 1 }),
+        });
+        await loadInventory();
+      } catch (e) {
+        $("appErr").hidden = false;
+        $("appErr").textContent = e.message || String(e);
+        if (btn) btn.disabled = false;
+      }
+    }
+
+    function setLang(lang) {
+      state.lang = lang === "en" ? "en" : "zh";
+      localStorage.setItem("dashboard_lang", state.lang);
+      document.documentElement.lang = state.lang === "zh" ? "zh-Hans" : "en";
+      $("langZh").classList.toggle("active", state.lang === "zh");
+      $("langEn").classList.toggle("active", state.lang === "en");
+      applyStaticCopy();
+      if (state.user) {
+        showApp();
+        renderAll();
+      } else {
+        renderWidget();
+      }
+    }
+
+    function applyStaticCopy() {
+      const i = t();
+      $("brandSub").textContent = i.brandSub;
+      $("loginTitle").textContent = i.loginTitle;
+      $("loginBody").textContent = i.loginBody;
+      $("kitchenLabel").textContent = i.kitchenLabel;
+      $("radarTitle").textContent = i.radarTitle;
+      $("radarSub").textContent = i.radarSub;
+      $("restockTitle").textContent = i.restockTitle;
+      $("restockSub").textContent = i.restockSub;
+      $("copyRestockBtn").textContent = i.copyList;
+      $("detailLabel").textContent = i.detailLabel;
+      $("refreshBtn").textContent = i.refresh;
+      if (!$("appPanel").hidden && $("kitchenSummary").textContent === "") {
+        $("kitchenSummary").textContent = i.loading;
+      }
+      if (state.serverLoginHint) {
+        $("loginHint").hidden = false;
+        $("loginHint").textContent = state.serverLoginHint;
+      } else if (!state.botUsername && !$("appPanel").hidden === false) {
+        /* keep widget render messaging */
+      }
+    }
+
     window.onTelegramAuth = async function (user) {
       try {
         $("loginHint").hidden = true;
@@ -468,8 +781,7 @@
       host.innerHTML = "";
       if (!state.botUsername) {
         $("loginHint").hidden = false;
-        $("loginHint").textContent =
-          "服务器未配置 TELEGRAM_BOT_USERNAME。请在 .env 设置 bot 用户名，并在 BotFather 用 /setdomain 绑定此站点域名。";
+        $("loginHint").textContent = t().botMissing;
         return;
       }
       const s = document.createElement("script");
@@ -487,16 +799,17 @@
       $("loginPanel").hidden = true;
       $("appPanel").hidden = false;
       const u = state.user || {};
+      const i = t();
       const bar = $("userBar");
       bar.hidden = false;
       bar.innerHTML = `
         <div class="user">
           ${u.photo_url ? `<img src="${escapeHtml(u.photo_url)}" alt="" />` : ""}
           <div>
-            <strong>${escapeHtml(u.first_name || u.username || "User")}</strong>
+            <strong>${escapeHtml(u.first_name || u.username || i.signedIn)}</strong>
             <div class="muted" style="font-size:0.85rem">id ${escapeHtml(u.user_id || "")}</div>
           </div>
-          <button type="button" class="ghost" id="logoutBtn">Log out</button>
+          <button type="button" class="ghost" id="logoutBtn">${escapeHtml(i.logout)}</button>
         </div>`;
       $("logoutBtn").onclick = async () => {
         await api("/api/auth/logout", { method: "POST", body: "{}" });
@@ -506,10 +819,13 @@
     }
 
     function renderFilters() {
+      const i = t();
+      const chips = ["全部", ...CAT_KEYS];
       const el = $("filters");
-      el.innerHTML = CATEGORIES.map((c) =>
-        `<button type="button" class="chip ${state.filter === c ? "active" : ""}" data-cat="${escapeHtml(c)}">${escapeHtml(c)}</button>`
-      ).join("");
+      el.innerHTML = chips.map((c) => {
+        const label = c === "全部" ? i.filterAll : catLabel(c);
+        return `<button type="button" class="chip ${state.filter === c ? "active" : ""}" data-cat="${escapeHtml(c)}">${escapeHtml(label)}</button>`;
+      }).join("");
       el.querySelectorAll("button").forEach((btn) => {
         btn.onclick = () => {
           state.filter = btn.dataset.cat;
@@ -522,9 +838,9 @@
     function filteredItems() {
       let items = state.items;
       if (state.filter === "其他") {
-        items = items.filter((i) => !CATEGORIES.slice(1, -1).includes(i.category));
+        items = items.filter((it) => !CAT_KEYS.slice(0, -1).includes(it.category));
       } else if (state.filter !== "全部") {
-        items = items.filter((i) => i.category === state.filter);
+        items = items.filter((it) => it.category === state.filter);
       }
       return sortByUrgency(items);
     }
@@ -533,75 +849,88 @@
       const overdue = [];
       const soon = [];
       const later = [];
-      for (const i of state.items) {
-        const d = daysUntil(i.best_by);
-        if (d == null) continue;
-        if (d < 0) overdue.push({ ...i, _days: d });
-        else if (d <= 7) soon.push({ ...i, _days: d });
-        else if (d <= 15) later.push({ ...i, _days: d });
+      const opened = [];
+      for (const it of state.items) {
+        const d = daysUntil(it.best_by);
+        if (d != null) {
+          if (d < 0) overdue.push({ ...it, _days: d });
+          else if (d <= 7) soon.push({ ...it, _days: d });
+          else if (d <= 15) later.push({ ...it, _days: d });
+        }
+        const od = daysAfterOpenLeft(it);
+        if (od != null && od <= 3) {
+          opened.push({ ...it, _openLeft: od });
+        }
       }
       const byDays = (a, b) => a._days - b._days;
       overdue.sort(byDays);
       soon.sort(byDays);
       later.sort(byDays);
-      return { overdue, soon, later };
+      opened.sort((a, b) => a._openLeft - b._openLeft);
+      return { overdue, soon, later, opened };
     }
 
-    function renderRadarItem(i) {
-      const d = i._days;
-      const dayLabel = d < 0 ? `${Math.abs(d)}d overdue` : `${d}d left`;
+    function renderRadarItem(it, opts = {}) {
+      const i = t();
+      const useOpenClock = !!opts.openClock;
+      const dayLabel = useOpenClock
+        ? i.openDaysLeft(it._openLeft)
+        : (it._days < 0 ? i.daysOverdue(Math.abs(it._days)) : i.daysLeft(it._days));
       return `<div class="radar-item">
         <div>
-          <strong>${escapeHtml(i.brand || "—")}</strong>
+          <strong>${escapeHtml(itemTitle(it))}</strong>
           <div class="muted" style="font-size:0.85rem">
-            ${escapeHtml(i.category || "")}${i.flavor ? " · " + escapeHtml(i.flavor) : ""}
-            · ×${escapeHtml(qtyOf(i))} · ${escapeHtml(dayLabel)}
+            ${escapeHtml(itemSubtitle(it))}
+            · ×${escapeHtml(qtyOf(it))} · ${escapeHtml(dayLabel)}
           </div>
         </div>
-        <button type="button" class="small" data-used="${escapeHtml(i.id)}">Open −1</button>
+        <button type="button" class="small" data-open="${escapeHtml(it.id)}">${escapeHtml(i.openBtn)}</button>
       </div>`;
     }
 
-    function renderRadarCol(title, cls, items, emptyMsg) {
+    function renderRadarCol(title, cls, items, emptyMsg, openClock) {
       const body = items.length
-        ? items.map(renderRadarItem).join("")
+        ? items.map((it) => renderRadarItem(it, { openClock })).join("")
         : `<div class="empty" style="padding:0.6rem 0">${escapeHtml(emptyMsg)}</div>`;
       return `<div class="radar-col ${cls}"><h3>${escapeHtml(title)} · ${items.length}</h3>${body}</div>`;
     }
 
     function renderRadar() {
-      const { overdue, soon, later } = bucketItems();
+      const i = t();
+      const { overdue, soon, later, opened } = bucketItems();
       $("radarGrid").innerHTML =
-        renderRadarCol("已过期", "overdue", overdue, "没有过期项，很好。") +
-        renderRadarCol("≤7 天 · 这周先吃", "soon", soon, "一周内没有临期。") +
-        renderRadarCol("8–15 天", "", later, "半个月内都很从容。");
-      $("radarGrid").querySelectorAll("[data-used]").forEach((btn) => {
-        btn.onclick = () => markUsed(btn.dataset.used, btn);
+        renderRadarCol(i.colOverdue, "overdue", overdue, i.emptyOverdue, false) +
+        renderRadarCol(i.colSoon, "soon", soon, i.emptySoon, false) +
+        renderRadarCol(i.colLater, "", later, i.emptyLater, false) +
+        renderRadarCol(i.colOpened, "soon", opened, i.emptyOpened, true);
+      $("radarGrid").querySelectorAll("[data-open]").forEach((btn) => {
+        btn.onclick = () => markOpen(btn.dataset.open, btn);
       });
     }
 
     function categoryTotals() {
       const totals = {};
       for (const key of Object.keys(state.thresholds)) totals[key] = 0;
-      for (const i of state.items) {
-        const k = catKey(i);
-        totals[k] = (totals[k] || 0) + qtyOf(i);
+      for (const it of state.items) {
+        const k = catKey(it);
+        totals[k] = (totals[k] || 0) + qtyOf(it);
       }
       return totals;
     }
 
     function soonQtyByCategory() {
       const soon = {};
-      for (const i of state.items) {
-        const d = daysUntil(i.best_by);
+      for (const it of state.items) {
+        const d = daysUntil(it.best_by);
         if (d == null || d < 0 || d > 7) continue;
-        const k = catKey(i);
-        soon[k] = (soon[k] || 0) + qtyOf(i);
+        const k = catKey(it);
+        soon[k] = (soon[k] || 0) + qtyOf(it);
       }
       return soon;
     }
 
     function buildRestockSuggestions() {
+      const i = t();
       const totals = categoryTotals();
       const soon = soonQtyByCategory();
       const suggestions = [];
@@ -613,10 +942,10 @@
         let suggestBuy = 0;
         if (have < threshold) {
           suggestBuy = threshold - have;
-          reason = `库存 ${have}，低于建议 ${threshold}`;
+          reason = i.stockBelow(have, threshold);
         } else if (afterSoon < threshold && soonQty > 0) {
           suggestBuy = threshold - afterSoon;
-          reason = `一周内将用掉/临期约 ${soonQty}，之后只剩 ${afterSoon}（建议 ≥${threshold}）`;
+          reason = i.afterSoon(soonQty, afterSoon, threshold);
         }
         if (suggestBuy > 0) {
           suggestions.push({
@@ -624,7 +953,6 @@
             cat,
             suggestBuy,
             reason,
-            have,
             critical: afterSoon === 0 && soonQty > 0,
           });
         }
@@ -634,23 +962,22 @@
     }
 
     function renderRestock() {
+      const i = t();
       const suggestions = buildRestockSuggestions();
       const list = $("restockList");
       if (!suggestions.length) {
-        list.innerHTML = `<li><label class="muted">品类库存都还够，暂时不用补货。</label></li>`;
+        list.innerHTML = `<li><label class="muted">${escapeHtml(i.restockOk)}</label></li>`;
         $("restockHint").textContent = "";
         return;
       }
       list.innerHTML = suggestions.map((s) => {
         const checked = state.restockChecked[s.id] !== false;
-        const voice = `再买 ${s.suggestBuy} ${s.cat === "罐头" ? "罐湿粮/罐头" : "份" + s.cat}`;
         return `<li>
           <input type="checkbox" data-restock="${escapeHtml(s.id)}" ${checked ? "checked" : ""} />
           <label>
-            <strong>${escapeHtml(s.cat)}</strong> · 建议补 ${escapeHtml(s.suggestBuy)}
-            ${s.critical ? ' <span class="badge danger">即将断粮</span>' : ""}
+            <strong>${escapeHtml(catLabel(s.cat))}</strong> · ${escapeHtml(i.suggestBuy(s.suggestBuy))}
+            ${s.critical ? ` <span class="badge danger">${escapeHtml(i.critical)}</span>` : ""}
             <div class="restock-meta">${escapeHtml(s.reason)}</div>
-            <div class="restock-meta">可对 bot 说：「${escapeHtml(voice)}」</div>
           </label>
         </li>`;
       }).join("");
@@ -661,57 +988,64 @@
       });
       const top = suggestions[0];
       $("restockHint").textContent = top
-        ? `优先：${top.cat}（建议 ${top.suggestBuy}）。阈值可之后在服务器配置。`
+        ? i.priority(catLabel(top.cat), top.suggestBuy)
         : "";
     }
 
     function copyRestock() {
+      const i = t();
       const suggestions = buildRestockSuggestions().filter(
         (s) => state.restockChecked[s.id] !== false
       );
       if (!suggestions.length) {
-        $("restockHint").textContent = "没有勾选的补货项。";
+        $("restockHint").textContent = i.nothingChecked;
         return;
       }
-      const lines = ["猫粮补货清单："].concat(
-        suggestions.map((s) => `- ${s.cat} ×${s.suggestBuy}（${s.reason}）`)
+      const lines = [i.copyTitle].concat(
+        suggestions.map((s) => `- ${catLabel(s.cat)} ×${s.suggestBuy}（${s.reason}）`)
       );
       const text = lines.join("\n");
       navigator.clipboard.writeText(text).then(
-        () => { $("restockHint").textContent = "已复制到剪贴板。"; },
+        () => { $("restockHint").textContent = i.copied; },
         () => { $("restockHint").textContent = text; }
       );
     }
 
     function renderKitchen() {
+      const i = t();
       const totals = categoryTotals();
       const totalQty = Object.values(totals).reduce((a, b) => a + b, 0);
-      const { overdue, soon } = bucketItems();
+      const { overdue, soon, opened } = bucketItems();
       const overdueN = overdue.length;
       const soonN = soon.length;
+      const openedN = opened.length;
       const lowCats = Object.entries(state.thresholds)
         .filter(([cat, th]) => (totals[cat] || 0) < th)
         .map(([cat]) => cat);
 
       let summary = "";
       if (totalQty === 0) {
-        summary = "还没有库存。去 Telegram 发一条语音开始记。";
+        summary = i.kitchenEmpty;
       } else {
         const wetOk = (totals["罐头"] || 0) >= (state.thresholds["罐头"] || 6);
         const dryLow = (totals["冻干"] || 0) < (state.thresholds["冻干"] || 3);
+        const medLow = (totals["药品"] || 0) < (state.thresholds["药品"] || 1);
         const bits = [];
-        bits.push(wetOk ? "湿粮还够" : "湿粮偏少");
-        bits.push(dryLow ? "冻干偏少" : "冻干还行");
-        if (soonN) bits.push(`${soonN} 样一周内到期`);
-        if (overdueN) bits.push(`${overdueN} 样已过期`);
-        summary = bits.join("；") + "。";
+        bits.push(wetOk ? i.wetOk : i.wetLow);
+        bits.push(dryLow ? i.dryLow : i.dryOk);
+        bits.push(medLow ? i.medLow : i.medOk);
+        if (soonN) bits.push(i.soonN(soonN));
+        if (overdueN) bits.push(i.overdueN(overdueN));
+        if (openedN) bits.push(i.openedN(openedN));
+        summary = bits.join(state.lang === "zh" ? "；" : "; ") + (state.lang === "zh" ? "。" : ".");
       }
       $("kitchenSummary").textContent = summary;
       $("kitchenKpis").innerHTML = `
-        <span>总件数 <b>${totalQty}</b></span>
-        <span>临期≤7d <b>${soonN}</b></span>
-        <span>已过期 <b>${overdueN}</b></span>
-        <span>SKU <b>${state.items.length}</b></span>
+        <span>${escapeHtml(i.kpiTotal)} <b>${totalQty}</b></span>
+        <span>${escapeHtml(i.kpiSoon)} <b>${soonN}</b></span>
+        <span>${escapeHtml(i.kpiOverdue)} <b>${overdueN}</b></span>
+        <span>${escapeHtml(i.kpiOpened)} <b>${openedN}</b></span>
+        <span>${escapeHtml(i.kpiSku)} <b>${state.items.length}</b></span>
       `;
 
       const bar = $("mixBar");
@@ -726,46 +1060,53 @@
         .map(([cat, n]) => {
           const pct = (n / totalQty) * 100;
           const color = MIX_COLORS[cat] || MIX_COLORS["其他"];
-          return `<span style="width:${pct}%;background:${color}" title="${escapeHtml(cat)} ${n}"></span>`;
+          return `<span style="width:${pct}%;background:${color}" title="${escapeHtml(catLabel(cat))} ${n}"></span>`;
         })
         .join("");
       legend.innerHTML = Object.entries(totals)
         .filter(([, n]) => n > 0)
         .map(([cat, n]) => {
           const color = MIX_COLORS[cat] || MIX_COLORS["其他"];
-          const low = lowCats.includes(cat) ? " · 偏低" : "";
-          return `<span><i class="dot" style="background:${color}"></i>${escapeHtml(cat)} ${n}${low}</span>`;
+          const low = lowCats.includes(cat) ? ` · ${i.lowTag}` : "";
+          return `<span><i class="dot" style="background:${color}"></i>${escapeHtml(catLabel(cat))} ${n}${escapeHtml(low)}</span>`;
         })
         .join("");
     }
 
     function renderTable() {
+      const i = t();
       const items = filteredItems();
       if (!items.length) {
-        $("tableWrap").innerHTML = `<div class="empty">暂无库存。打开 Telegram bot 发一条语音录入即可。</div>`;
+        $("tableWrap").innerHTML = `<div class="empty">${escapeHtml(i.emptyTable)}</div>`;
         return;
       }
 
-      const rows = items.map((i) => {
-        const d = daysUntil(i.best_by);
+      const rows = items.map((it) => {
+        const d = daysUntil(it.best_by);
         let rowClass = "";
         let badge = "";
         if (d != null && d < 0) {
           rowClass = "overdue";
-          badge = `<span class="badge danger">${Math.abs(d)}d overdue</span>`;
+          badge = `<span class="badge danger">${escapeHtml(i.daysOverdue(Math.abs(d)))}</span>`;
         } else if (d != null && d <= 7) {
           rowClass = "soon";
-          badge = `<span class="badge warn">${d}d left</span>`;
+          badge = `<span class="badge warn">${escapeHtml(i.daysLeft(d))}</span>`;
         } else if (d != null) {
-          badge = `<span class="badge">${d}d</span>`;
+          badge = `<span class="badge">${escapeHtml(i.daysLeft(d))}</span>`;
+        }
+        const openLeft = daysAfterOpenLeft(it);
+        let openBadge = "";
+        if (openLeft != null) {
+          openBadge = `<div><span class="badge ${openLeft <= 0 ? "danger" : "warn"}">${escapeHtml(i.openDaysLeft(openLeft))}</span></div>`;
         }
         return `<tr class="${rowClass}">
-          <td><strong>${escapeHtml(i.brand || "—")}</strong><div class="muted">${escapeHtml(i.flavor || "")}</div></td>
-          <td>${escapeHtml(i.category || "—")}</td>
-          <td>${escapeHtml(i.best_by || "—")}<div>${badge}</div></td>
-          <td>×${escapeHtml(qtyOf(i))}</td>
+          <td><strong>${escapeHtml(itemTitle(it))}</strong><div class="muted">${escapeHtml(itemSubtitle(it))}</div></td>
+          <td>${escapeHtml(catLabel(catKey(it)))}</td>
+          <td>${escapeHtml(it.best_by || "—")}<div>${badge}</div>${openBadge}</td>
+          <td>×${escapeHtml(qtyOf(it))}</td>
           <td>
-            <button type="button" data-used="${escapeHtml(i.id)}">Used −1</button>
+            <button type="button" data-open="${escapeHtml(it.id)}">${escapeHtml(i.openBtn)}</button>
+            <button type="button" data-used="${escapeHtml(it.id)}">${escapeHtml(i.usedBtn)}</button>
           </td>
         </tr>`;
       }).join("");
@@ -774,22 +1115,112 @@
         <table>
           <thead>
             <tr>
-              <th>Brand / flavor</th>
-              <th>Category</th>
-              <th>Best by</th>
-              <th>Qty</th>
+              <th>${escapeHtml(i.thBrand)}</th>
+              <th>${escapeHtml(i.thCat)}</th>
+              <th>${escapeHtml(i.thBestBy)}</th>
+              <th>${escapeHtml(i.thQty)}</th>
               <th></th>
             </tr>
           </thead>
           <tbody>${rows}</tbody>
         </table>`;
 
+      $("tableWrap").querySelectorAll("[data-open]").forEach((btn) => {
+        btn.onclick = () => markOpen(btn.dataset.open, btn);
+      });
       $("tableWrap").querySelectorAll("[data-used]").forEach((btn) => {
         btn.onclick = () => markUsed(btn.dataset.used, btn);
       });
     }
 
+    async function loadHousehold() {
+      try {
+        const data = await api("/api/me/household");
+        state.household = data.household || null;
+      } catch {
+        state.household = null;
+      }
+      renderHousehold();
+    }
+
+    function renderHousehold() {
+      const i = t();
+      $("hhLabel").textContent = i.hhLabel;
+      const h = state.household;
+      if (!h) {
+        $("hhSub").textContent = i.hhSolo;
+        $("hhBody").innerHTML = `
+          <div class="row" style="margin:0">
+            <button type="button" class="primary" id="hhCreateBtn">${escapeHtml(i.hhCreate)}</button>
+            <span style="display:flex;gap:0.4rem;align-items:center">
+              <input id="hhJoinCode" placeholder="${escapeHtml(i.hhCodePh)}" style="font:inherit;padding:0.4rem 0.65rem;border:1px solid var(--line);border-radius:999px;width:8rem" />
+              <button type="button" id="hhJoinBtn">${escapeHtml(i.hhJoin)}</button>
+            </span>
+          </div>`;
+        $("hhCreateBtn").onclick = async () => {
+          try {
+            const data = await api("/api/me/household/create", { method: "POST", body: "{}" });
+            state.household = data.household;
+            renderHousehold();
+            await loadInventory();
+          } catch (e) {
+            $("appErr").hidden = false;
+            $("appErr").textContent = e.message || String(e);
+          }
+        };
+        $("hhJoinBtn").onclick = async () => {
+          const code = ($("hhJoinCode").value || "").trim();
+          try {
+            const data = await api("/api/me/household/join", {
+              method: "POST",
+              body: JSON.stringify({ code }),
+            });
+            state.household = data.household;
+            renderHousehold();
+            await loadInventory();
+          } catch (e) {
+            $("appErr").hidden = false;
+            $("appErr").textContent = e.message || String(e);
+          }
+        };
+        return;
+      }
+      $("hhSub").textContent = i.hhShared(h.invite_code, h.member_count, h.max_members);
+      const notifyLabel = h.notify_partner_changes ? i.hhNotifyOff : i.hhNotifyOn;
+      $("hhBody").innerHTML = `
+        <p class="hint-line" style="margin-top:0">${escapeHtml(i.hhNotifyHint)}</p>
+        <div class="row" style="margin:0">
+          <button type="button" id="hhNotifyBtn">${escapeHtml(notifyLabel)}</button>
+          <button type="button" class="ghost" id="hhLeaveBtn">${escapeHtml(i.hhLeave)}</button>
+        </div>`;
+      $("hhNotifyBtn").onclick = async () => {
+        try {
+          const data = await api("/api/me/household/notify", {
+            method: "POST",
+            body: JSON.stringify({ enabled: !h.notify_partner_changes }),
+          });
+          state.household = { ...h, notify_partner_changes: data.notify_partner_changes };
+          renderHousehold();
+        } catch (e) {
+          $("appErr").hidden = false;
+          $("appErr").textContent = e.message || String(e);
+        }
+      };
+      $("hhLeaveBtn").onclick = async () => {
+        try {
+          await api("/api/me/household/leave", { method: "POST", body: "{}" });
+          state.household = null;
+          renderHousehold();
+          await loadInventory();
+        } catch (e) {
+          $("appErr").hidden = false;
+          $("appErr").textContent = e.message || String(e);
+        }
+      };
+    }
+
     function renderAll() {
+      renderHousehold();
       renderKitchen();
       renderRadar();
       renderRestock();
@@ -815,13 +1246,21 @@
     }
 
     async function boot() {
+      $("langZh").onclick = () => setLang("zh");
+      $("langEn").onclick = () => setLang("en");
+      setLang(state.lang);
+
       try {
         const cfg = await api("/api/dashboard/config");
         state.botUsername = cfg.bot_username || "";
         if (cfg.restock_thresholds && typeof cfg.restock_thresholds === "object") {
           state.thresholds = { ...DEFAULT_THRESHOLDS, ...cfg.restock_thresholds };
         }
+        if (cfg.open_shelf_days && typeof cfg.open_shelf_days === "object") {
+          state.openShelf = { ...DEFAULT_OPEN_SHELF, ...cfg.open_shelf_days };
+        }
         if (cfg.login_hint) {
+          state.serverLoginHint = cfg.login_hint;
           $("loginHint").hidden = false;
           $("loginHint").textContent = cfg.login_hint;
         }
@@ -833,14 +1272,18 @@
 
       try {
         const me = await api("/api/me");
-        state.user = { user_id: me.user_id, first_name: "Signed in" };
+        state.user = { user_id: me.user_id, first_name: t().signedIn };
         showApp();
         await loadInventory();
+        await loadHousehold();
       } catch {
         /* stay on login */
       }
 
-      $("refreshBtn").onclick = () => loadInventory();
+      $("refreshBtn").onclick = async () => {
+        await loadInventory();
+        await loadHousehold();
+      };
       $("copyRestockBtn").onclick = () => copyRestock();
     }
 

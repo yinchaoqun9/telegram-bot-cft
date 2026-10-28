@@ -1,5 +1,5 @@
 """
-Normalize product category (冻干 / 罐头 / 汤包 / 猫条 / 零食) from LLM + transcript.
+Normalize product category for pet pantry items (food, litter, meds).
 No API calls.
 """
 
@@ -25,6 +25,7 @@ _CATEGORY_ALIASES: List[Tuple[str, List[str]]] = [
             "主食罐",
             "湿粮罐",
             "猫罐头",
+            "狗罐头",
             "罐头",
             "湿粮",
             "wet food",
@@ -65,7 +66,37 @@ _CATEGORY_ALIASES: List[Tuple[str, List[str]]] = [
             "reward",
         ],
     ),
+    (
+        "猫砂",
+        [
+            "猫砂",
+            "猫沙",
+            "litter",
+            "cat litter",
+            "kitty litter",
+        ],
+    ),
+    (
+        "药品",
+        [
+            "药品",
+            "药物",
+            "吃药",
+            "服药",
+            "处方药",
+            "medication",
+            "medicine",
+            "meds",
+            "med",
+            "pill",
+            "pills",
+            "tablet",
+            "tablets",
+            "rx",
+        ],
+    ),
 ]
+
 
 
 def _flatten_alias_pairs() -> List[Tuple[str, str]]:
@@ -90,6 +121,8 @@ def _flatten_alias_pairs() -> List[Tuple[str, str]]:
 
 _ALIAS_PAIRS = _flatten_alias_pairs()
 
+CANONICAL_CATEGORIES = [c for c, _ in _CATEGORY_ALIASES]
+
 
 def _token_in_text(needle: str, haystack: str) -> bool:
     n = needle.strip()
@@ -112,16 +145,16 @@ def infer_category_from_transcription(transcription: str) -> str:
     return ""
 
 
-# Default when voice/LLM does not specify a type (wet food)
-DEFAULT_CATEGORY = "罐头"
+# Empty by default: do not force wet food when the user never said a type.
+DEFAULT_CATEGORY = ""
 
 
 def normalize_category(
     raw: str, transcription: str = "", *, default: Optional[str] = None
 ) -> str:
     """
-    Map LLM category string to one of the five canonical labels, or infer from transcript.
-    If still empty, use default (湿粮/罐头 = wet food) unless default=\"\".
+    Map LLM category string to a canonical label, or infer from transcript.
+    If still empty, use default ("" unless caller overrides).
     """
     s = (raw or "").strip()
     if s:

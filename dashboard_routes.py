@@ -95,7 +95,19 @@ async def dashboard_config() -> Dict[str, Any]:
             "汤包": int(os.environ.get("RESTOCK_THRESHOLD_SOUP", "2")),
             "猫条": int(os.environ.get("RESTOCK_THRESHOLD_STICK", "2")),
             "零食": int(os.environ.get("RESTOCK_THRESHOLD_TREAT", "2")),
+            "猫砂": int(os.environ.get("RESTOCK_THRESHOLD_LITTER", "1")),
+            "药品": int(os.environ.get("RESTOCK_THRESHOLD_MED", "1")),
             "其他": int(os.environ.get("RESTOCK_THRESHOLD_OTHER", "2")),
+        },
+        "open_shelf_days": {
+            "罐头": 2,
+            "汤包": 2,
+            "猫条": 3,
+            "冻干": 30,
+            "零食": 14,
+            "猫砂": 60,
+            "药品": 90,
+            "其他": 7,
         },
     }
 
@@ -163,15 +175,125 @@ async def mark_used(
     body: UsedBody | None = None,
     user_id: str = Depends(require_user),
 ) -> Dict[str, Any]:
-    from main import get_supabase
+    from main import get_supabase, notify_household_partners
     from services.supabase_service import SupabaseServiceError
 
     delta = (body or UsedBody()).delta
     try:
         status = await get_supabase().decrement_item_quantity(user_id, item_id, delta=delta)
+        await notify_household_partners(
+            user_id, f"Household update: Used −1 (id {item_id[:8]}…)."
+        )
     except SupabaseServiceError as e:
         raise HTTPException(status_code=404, detail=str(e)) from e
     except Exception as e:
         logger.exception("mark used failed: %s", e)
         raise HTTPException(status_code=502, detail="Failed to update item") from e
     return {"ok": True, "status": status, "item_id": item_id}
+
+
+@router.post("/api/me/inventory/{item_id}/open")
+async def mark_open(
+    item_id: str,
+    body: UsedBody | None = None,
+    user_id: str = Depends(require_user),
+) -> Dict[str, Any]:
+    from main import get_supabase, notify_household_partners
+    from services.supabase_service import SupabaseServiceError
+
+    delta = (body or UsedBody()).delta
+    try:
+        status = await get_supabase().open_item(user_id, item_id, delta=delta)
+        await notify_household_partners(
+            user_id, f"Household update: Opened −1 (id {item_id[:8]}…)."
+        )
+    except SupabaseServiceError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+    except Exception as e:
+        logger.exception("mark open failed: %s", e)
+        raise HTTPException(status_code=502, detail="Failed to open item") from e
+    return {"ok": True, "status": status, "item_id": item_id}
+
+
+class JoinBody(BaseModel):
+    code: str = Field(min_length=3, max_length=32)
+
+
+class NotifyBody(BaseModel):
+    enabled: bool
+
+
+@router.get("/api/me/household")
+async def get_household(user_id: str = Depends(require_user)) -> Dict[str, Any]:
+    from main import get_supabase
+
+    try:
+        summary = await get_supabase().get_household_summary(user_id)
+    except Exception as e:
+        logger.exception("get household failed: %s", e)
+        raise HTTPException(status_code=502, detail="Failed to load household") from e
+    return {"household": summary}
+
+
+@router.post("/api/me/household/create")
+async def create_household(user_id: str = Depends(require_user)) -> Dict[str, Any]:
+    from main import get_supabase
+    from services.household_service import HouseholdError
+    from services.supabase_service import SupabaseServiceError
+
+    try:
+        summary = await get_supabase().create_household(user_id)
+    except HouseholdError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except SupabaseServiceError as e:
+        raise HTTPException(status_code=502, detail=str(e)) from e
+    return {"household": summary}
+
+
+@router.post("/api/me/household/join")
+async def join_household(
+    body: JoinBody, user_id: str = Depends(require_user)
+) -> Dict[str, Any]:
+    from main import get_supabase
+    from services.household_service import HouseholdError
+    from services.supabase_service import SupabaseServiceError
+
+    try:
+        summary = await get_supabase().join_household(user_id, body.code)
+    except HouseholdError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except SupabaseServiceError as e:
+        raise HTTPException(status_code=502, detail=str(e)) from e
+    return {"household": summary}
+
+
+@router.post("/api/me/household/leave")
+async def leave_household(user_id: str = Depends(require_user)) -> Dict[str, Any]:
+    from main import get_supabase
+    from services.household_service import HouseholdError
+    from services.supabase_service import SupabaseServiceError
+
+    try:
+        msg = await get_supabase().leave_household(user_id)
+    except HouseholdError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except SupabaseServiceError as e:
+        raise HTTPException(status_code=502, detail=str(e)) from e
+    return {"ok": True, "message": msg}
+
+
+@router.post("/api/me/household/notify")
+async def set_household_notify(
+    body: NotifyBody, user_id: str = Depends(require_user)
+) -> Dict[str, Any]:
+    from main import get_supabase
+    from services.household_service import HouseholdError
+    from services.supabase_service import SupabaseServiceError
+
+    try:
+        enabled = await get_supabase().set_notify_partner(user_id, body.enabled)
+    except HouseholdError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except SupabaseServiceError as e:
+        raise HTTPException(status_code=502, detail=str(e)) from e
+    return {"ok": True, "notify_partner_changes": enabled}

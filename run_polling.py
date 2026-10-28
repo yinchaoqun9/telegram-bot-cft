@@ -127,14 +127,19 @@ async def main() -> None:
                     )
                     await tg.send_message(
                         chat_id,
-                        "Send a voice message: brand, category (冻干/罐头/汤包/猫条/零食), flavor, best-by, quantity.\n\n"
-                        "After saving: Fix (brand/qty/category) · Open −1 · Delete\n"
-                        "/fix <id> · /open <id> · /used <id>."
+                        "Pet Pantry — voice-log cat/dog food, litter, and meds.\n"
+                        "After saving: Fix · Open −1 · Delete\n"
+                        "/fix · /open · /used\n"
+                        "Share pantry (free for 2): /household · /join CODE · /notify on|off"
                         + dash_line,
                         parse_mode=None,
                     )
                 elif cmd0 in ("/used", "/open"):
                     await handle_used_command(chat_id, user_id, text_raw)
+                elif cmd0 in ("/household", "/join", "/leave", "/notify"):
+                    from main import handle_household_command
+
+                    await handle_household_command(chat_id, user_id, text_raw)
                 elif cmd0 == "/fix":
                     await handle_fix_command(chat_id, user_id, text_raw)
                 else:

@@ -23,6 +23,12 @@ def test_brand_and_category_together():
     assert patch.get("category") == "冻干"
 
 
+def test_meds_category_token():
+    assert parse_fix_patch("药品") == {"category": "药品"}
+    assert parse_fix_patch("meds") == {"category": "药品"}
+    assert parse_fix_patch("Apoquel 药品") == {"brand": "Apoquel", "category": "药品"}
+
+
 def test_brand_qty_category():
     patch = parse_fix_patch("Orijen 3 wet food")
     assert patch.get("brand") == "Orijen"

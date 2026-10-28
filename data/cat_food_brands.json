@@ -13,402 +13,942 @@
   },
   {
     "canonical": "Fancy Feast",
-    "aliases": ["珍致", "fancy feast", "FancyFeast", "普瑞纳珍致"]
+    "aliases": [
+      "珍致",
+      "fancy feast",
+      "FancyFeast",
+      "普瑞纳珍致"
+    ]
   },
   {
     "canonical": "Purina",
-    "aliases": ["普瑞纳", "purina", "冠能", "Pro Plan", "pro plan", "妙多乐"]
+    "aliases": [
+      "普瑞纳",
+      "purina",
+      "冠能",
+      "Pro Plan",
+      "pro plan",
+      "妙多乐"
+    ]
   },
   {
     "canonical": "Hill's Science Diet",
-    "aliases": ["希尔思", "hills", "science diet", "Hills", "希尔斯", "Prescription Diet"]
+    "aliases": [
+      "希尔思",
+      "hills",
+      "science diet",
+      "Hills",
+      "希尔斯",
+      "Prescription Diet"
+    ]
   },
   {
     "canonical": "Wellness",
-    "aliases": ["wellness", "维乐思", "CORE"]
+    "aliases": [
+      "wellness",
+      "维乐思",
+      "CORE"
+    ]
   },
   {
     "canonical": "Blue Buffalo",
-    "aliases": ["蓝爵", "blue buffalo", "蓝馔"]
+    "aliases": [
+      "蓝爵",
+      "blue buffalo",
+      "蓝馔"
+    ]
   },
   {
     "canonical": "Sheba",
-    "aliases": ["希宝", "sheba"]
+    "aliases": [
+      "希宝",
+      "sheba"
+    ]
   },
   {
     "canonical": "Friskies",
-    "aliases": ["喜跃", "friskies"]
+    "aliases": [
+      "喜跃",
+      "friskies"
+    ]
   },
   {
     "canonical": "Iams",
-    "aliases": ["爱慕思", "iams", "Eukanuba", "优卡"]
+    "aliases": [
+      "爱慕思",
+      "iams",
+      "Eukanuba",
+      "优卡"
+    ]
   },
   {
     "canonical": "Meow Mix",
-    "aliases": ["喵趣", "meow mix"]
+    "aliases": [
+      "喵趣",
+      "meow mix"
+    ]
   },
   {
     "canonical": "9Lives",
-    "aliases": ["九条命", "9 lives", "9Lives"]
+    "aliases": [
+      "九条命",
+      "9 lives",
+      "9Lives"
+    ]
   },
   {
     "canonical": "Rachael Ray Nutrish",
-    "aliases": ["Nutrish", "rachael ray", "瑞秋雷"]
+    "aliases": [
+      "Nutrish",
+      "rachael ray",
+      "瑞秋雷"
+    ]
   },
   {
     "canonical": "Taste of the Wild",
-    "aliases": ["荒野盛宴", "taste of the wild", "TOTW"]
+    "aliases": [
+      "荒野盛宴",
+      "taste of the wild",
+      "TOTW"
+    ]
   },
   {
     "canonical": "Nutro",
-    "aliases": ["美士", "nutro", "Nutro Natural Choice"]
+    "aliases": [
+      "美士",
+      "nutro",
+      "Nutro Natural Choice"
+    ]
   },
   {
     "canonical": "American Journey",
-    "aliases": ["american journey", "AJ 猫粮"]
+    "aliases": [
+      "american journey",
+      "AJ 猫粮"
+    ]
   },
   {
     "canonical": "Instinct",
-    "aliases": ["本能", "instinct", "Nature's Variety", "百利"]
+    "aliases": [
+      "本能",
+      "instinct",
+      "Nature's Variety",
+      "百利"
+    ]
   },
   {
     "canonical": "Merrick",
-    "aliases": ["麻利", "merrick"]
+    "aliases": [
+      "麻利",
+      "merrick"
+    ]
   },
   {
     "canonical": "Canidae",
-    "aliases": ["卡比", "canidae", "PURE"]
+    "aliases": [
+      "卡比",
+      "canidae",
+      "PURE"
+    ]
   },
   {
     "canonical": "Nulo",
-    "aliases": ["nulo", "诺洛"]
+    "aliases": [
+      "nulo",
+      "诺洛"
+    ]
   },
   {
     "canonical": "Tiki Cat",
-    "aliases": ["蒂基猫", "tiki cat", "Tiki"]
+    "aliases": [
+      "蒂基猫",
+      "tiki cat",
+      "Tiki"
+    ]
   },
   {
     "canonical": "Weruva",
-    "aliases": ["唯美味", "weruva", "Cats in the Kitchen"]
+    "aliases": [
+      "唯美味",
+      "weruva",
+      "Cats in the Kitchen"
+    ]
   },
   {
     "canonical": "Natural Balance",
-    "aliases": ["雪山", "natural balance", "天衡宝"]
+    "aliases": [
+      "雪山",
+      "natural balance",
+      "天衡宝"
+    ]
   },
   {
     "canonical": "Fromm",
-    "aliases": ["福摩", "fromm", "Fromm Family"]
+    "aliases": [
+      "福摩",
+      "fromm",
+      "Fromm Family"
+    ]
   },
   {
     "canonical": "Stella & Chewy's",
-    "aliases": ["SC", "stella and chewy", "星益生趣"]
+    "aliases": [
+      "SC",
+      "stella and chewy",
+      "星益生趣"
+    ]
   },
   {
     "canonical": "Orijen",
-    "aliases": ["渴望", "orijen", "原始猎食", "origen", "oragen", "欧睿健"]
+    "aliases": [
+      "渴望",
+      "orijen",
+      "原始猎食",
+      "origen",
+      "oragen",
+      "欧睿健"
+    ]
   },
   {
     "canonical": "Acana",
-    "aliases": ["爱肯拿", "acana", "愛肯拿", "akana", "Akana", "AKANA"]
+    "aliases": [
+      "爱肯拿",
+      "acana",
+      "愛肯拿",
+      "akana",
+      "Akana",
+      "AKANA"
+    ]
   },
   {
     "canonical": "Applaws",
-    "aliases": ["爱普士", "applaws"]
+    "aliases": [
+      "爱普士",
+      "applaws"
+    ]
   },
   {
     "canonical": "Josera",
-    "aliases": ["优思佳", "josera", "JOSERA"]
+    "aliases": [
+      "优思佳",
+      "josera",
+      "JOSERA"
+    ]
   },
   {
     "canonical": "GranataPet",
-    "aliases": ["石榴交响乐", "金交", "granatapet", "Granata Pet"]
+    "aliases": [
+      "石榴交响乐",
+      "金交",
+      "granatapet",
+      "Granata Pet"
+    ]
   },
   {
     "canonical": "Animonda",
-    "aliases": ["卡尼", "animonda", "Carny", "carny", "Integra"]
+    "aliases": [
+      "卡尼",
+      "animonda",
+      "Carny",
+      "carny",
+      "Integra"
+    ]
   },
   {
     "canonical": "MjamMjam",
-    "aliases": ["喵吖喵", "mjammjam", "Mjam Mjam", "迈格仕"]
+    "aliases": [
+      "喵吖喵",
+      "mjammjam",
+      "Mjam Mjam",
+      "迈格仕"
+    ]
   },
   {
     "canonical": "Catz Finefood",
-    "aliases": ["凯姿", "catz finefood", "CATZ", "catz"]
+    "aliases": [
+      "凯姿",
+      "catz finefood",
+      "CATZ",
+      "catz"
+    ]
   },
   {
     "canonical": "Leonardo",
-    "aliases": ["小李子", "leonardo", "LEONARDO"]
+    "aliases": [
+      "小李子",
+      "leonardo",
+      "LEONARDO"
+    ]
   },
   {
     "canonical": "Mac's",
-    "aliases": ["马克斯", "mac's", "Macs", "迈酷思"]
+    "aliases": [
+      "马克斯",
+      "mac's",
+      "Macs",
+      "迈酷思"
+    ]
   },
   {
     "canonical": "Smilla",
-    "aliases": ["斯米啦", "smilla"]
+    "aliases": [
+      "斯米啦",
+      "smilla"
+    ]
   },
   {
     "canonical": "Real Nature",
-    "aliases": ["瑞尔天然", "real nature", "Wild Elements"]
+    "aliases": [
+      "瑞尔天然",
+      "real nature",
+      "Wild Elements"
+    ]
   },
   {
     "canonical": "Feringa",
-    "aliases": ["费林加", "feringa"]
+    "aliases": [
+      "费林加",
+      "feringa"
+    ]
   },
   {
     "canonical": "Myfoodie",
-    "aliases": ["麦富迪", "myfoodie", "麦富迪猫粮"]
+    "aliases": [
+      "麦富迪",
+      "myfoodie",
+      "麦富迪猫粮"
+    ]
   },
   {
     "canonical": "Bile",
-    "aliases": ["比乐", "bile", "比乐原味鲜"]
+    "aliases": [
+      "比乐",
+      "bile",
+      "比乐原味鲜"
+    ]
   },
   {
     "canonical": "Wanpy",
-    "aliases": ["顽皮", "wanpy", "顽皮猫粮"]
+    "aliases": [
+      "顽皮",
+      "wanpy",
+      "顽皮猫粮"
+    ]
   },
   {
     "canonical": "Marumi",
-    "aliases": ["丸味", "丸味宠物", "marumi", "MARUMI"]
+    "aliases": [
+      "丸味",
+      "丸味宠物",
+      "marumi",
+      "MARUMI"
+    ]
   },
   {
     "canonical": "Pure & Natural",
-    "aliases": ["伯纳天纯", "pure natural", "伯納天純"]
+    "aliases": [
+      "伯纳天纯",
+      "pure natural",
+      "伯納天純"
+    ]
   },
   {
     "canonical": "Toptrees",
-    "aliases": ["领先", "toptrees", "Toptrees"]
+    "aliases": [
+      "领先",
+      "toptrees",
+      "Toptrees"
+    ]
   },
   {
     "canonical": "Alfie & Buddy",
-    "aliases": ["阿飞和巴弟", "alfie and buddy", "阿飛和巴弟"]
+    "aliases": [
+      "阿飞和巴弟",
+      "alfie and buddy",
+      "阿飛和巴弟"
+    ]
   },
   {
     "canonical": "Furrytail",
-    "aliases": ["尾巴生活", "furrytail"]
+    "aliases": [
+      "尾巴生活",
+      "furrytail"
+    ]
   },
   {
     "canonical": "LORDE",
-    "aliases": ["里兜", "lorde", "LORDE里兜"]
+    "aliases": [
+      "里兜",
+      "lorde",
+      "LORDE里兜"
+    ]
   },
   {
     "canonical": "Yoken",
-    "aliases": ["怡亲", "yoken"]
+    "aliases": [
+      "怡亲",
+      "yoken"
+    ]
   },
   {
     "canonical": "Nature Bridge",
-    "aliases": ["比瑞吉", "nature bridge", "比瑞吉猫粮"]
+    "aliases": [
+      "比瑞吉",
+      "nature bridge",
+      "比瑞吉猫粮"
+    ]
   },
   {
     "canonical": "Care",
-    "aliases": ["好主人", "care", "好主人猫粮"]
+    "aliases": [
+      "好主人",
+      "care",
+      "好主人猫粮"
+    ]
   },
   {
     "canonical": "Zeal",
-    "aliases": ["真致", "zeal", "新西兰真致"]
+    "aliases": [
+      "真致",
+      "zeal",
+      "新西兰真致"
+    ]
   },
   {
     "canonical": "Nourse",
-    "aliases": ["卫仕", "nourse", "卫仕猫粮", "NOURSE"]
+    "aliases": [
+      "卫仕",
+      "nourse",
+      "卫仕猫粮",
+      "NOURSE"
+    ]
   },
   {
     "canonical": "RedDog",
-    "aliases": ["红狗", "reddog", "Red Dog", "红狗宠物"]
+    "aliases": [
+      "红狗",
+      "reddog",
+      "Red Dog",
+      "红狗宠物"
+    ]
   },
   {
     "canonical": "LEGENDSANDY",
-    "aliases": ["蓝氏", "legendsandy", "Legend Sandy", "蓝氏猫粮"]
+    "aliases": [
+      "蓝氏",
+      "legendsandy",
+      "Legend Sandy",
+      "蓝氏猫粮"
+    ]
   },
   {
     "canonical": "GAOYEA",
-    "aliases": ["高爷家", "gaoyea", "高爷家猫粮"]
+    "aliases": [
+      "高爷家",
+      "gaoyea",
+      "高爷家猫粮"
+    ]
   },
   {
     "canonical": "Honest Bite",
-    "aliases": ["诚实一口", "honest bite", "诚实一口猫粮"]
+    "aliases": [
+      "诚实一口",
+      "honest bite",
+      "诚实一口猫粮"
+    ]
   },
   {
     "canonical": "pidan",
-    "aliases": ["pidan", "彼诞", "皮蛋"]
+    "aliases": [
+      "pidan",
+      "彼诞",
+      "皮蛋"
+    ]
   },
   {
     "canonical": "YANXUAN",
-    "aliases": ["网易严选", "yanxuan", "严选猫粮", "网易猫粮"]
+    "aliases": [
+      "网易严选",
+      "yanxuan",
+      "严选猫粮",
+      "网易猫粮"
+    ]
   },
   {
     "canonical": "Ocean Star",
-    "aliases": ["海洋之星", "ocean star", "Fish4Dogs", "fish4dogs"]
+    "aliases": [
+      "海洋之星",
+      "ocean star",
+      "Fish4Dogs",
+      "fish4dogs"
+    ]
   },
   {
     "canonical": "Jiang Xiao Ao",
-    "aliases": ["江小傲", "jiang xiao ao", "江小傲猫粮"]
+    "aliases": [
+      "江小傲",
+      "jiang xiao ao",
+      "江小傲猫粮"
+    ]
   },
   {
     "canonical": "Partner Pet",
-    "aliases": ["帕特", "partner pet", "帕特猫粮"]
+    "aliases": [
+      "帕特",
+      "partner pet",
+      "帕特猫粮"
+    ]
   },
   {
     "canonical": "Xianlang",
-    "aliases": ["鲜朗", "鲜朗猫粮", "xianlang", "XIANLANG"]
+    "aliases": [
+      "鲜朗",
+      "鲜朗猫粮",
+      "xianlang",
+      "XIANLANG"
+    ]
   },
   {
     "canonical": "Solid Gold",
-    "aliases": ["素力高", "solid gold", "SolidGold", "金素"]
+    "aliases": [
+      "素力高",
+      "solid gold",
+      "SolidGold",
+      "金素"
+    ]
   },
   {
     "canonical": "Fussie Cat",
-    "aliases": ["高窦猫", "fussie cat", "FussieCat"]
+    "aliases": [
+      "高窦猫",
+      "fussie cat",
+      "FussieCat"
+    ]
   },
   {
     "canonical": "Nutrience",
-    "aliases": ["哈根纽翠斯", "nutrience", "纽翠斯"]
+    "aliases": [
+      "哈根纽翠斯",
+      "nutrience",
+      "纽翠斯"
+    ]
   },
   {
     "canonical": "Go!",
-    "aliases": ["go猫粮", "go!", "Petcurean Go", "go solutions"]
+    "aliases": [
+      "go猫粮",
+      "go!",
+      "Petcurean Go",
+      "go solutions"
+    ]
   },
   {
     "canonical": "Now Fresh",
-    "aliases": ["now猫粮", "now fresh", "NowFresh"]
+    "aliases": [
+      "now猫粮",
+      "now fresh",
+      "NowFresh"
+    ]
   },
   {
     "canonical": "Happy Cat",
-    "aliases": ["happy cat", "HappyCat", "嗨皮猫"]
+    "aliases": [
+      "happy cat",
+      "HappyCat",
+      "嗨皮猫"
+    ]
   },
   {
     "canonical": "Wild Freedom",
-    "aliases": ["wild freedom", "WildFreedom"]
+    "aliases": [
+      "wild freedom",
+      "WildFreedom"
+    ]
   },
   {
     "canonical": "Bosch",
-    "aliases": ["博世", "bosch", "bosch tiernahrung", "Bosch Sanabelle"]
+    "aliases": [
+      "博世",
+      "bosch",
+      "bosch tiernahrung",
+      "Bosch Sanabelle"
+    ]
   },
   {
     "canonical": "Schmusy",
-    "aliases": ["schmusy", "Schmusy Cat"]
+    "aliases": [
+      "schmusy",
+      "Schmusy Cat"
+    ]
   },
   {
     "canonical": "RINTI",
-    "aliases": ["rinti", "Rinti"]
+    "aliases": [
+      "rinti",
+      "Rinti"
+    ]
   },
   {
     "canonical": "Anifit",
-    "aliases": ["anifit", "Anifit"]
+    "aliases": [
+      "anifit",
+      "Anifit"
+    ]
   },
   {
     "canonical": "Wolf of Wilderness",
-    "aliases": ["wolf of wilderness", "WolfOfWilderness", "荒野狼"]
+    "aliases": [
+      "wolf of wilderness",
+      "WolfOfWilderness",
+      "荒野狼"
+    ]
   },
   {
     "canonical": "Concept for Life",
-    "aliases": ["concept for life", "ConceptForLife"]
+    "aliases": [
+      "concept for life",
+      "ConceptForLife"
+    ]
   },
   {
     "canonical": "Power of Nature",
-    "aliases": ["power of nature", "PowerOfNature"]
+    "aliases": [
+      "power of nature",
+      "PowerOfNature"
+    ]
   },
   {
     "canonical": "Meravital",
-    "aliases": ["meravital", "Meravital"]
+    "aliases": [
+      "meravital",
+      "Meravital"
+    ]
   },
   {
     "canonical": "CIAO",
-    "aliases": ["ciao", "CIAO啾噜", "伊纳宝啾噜", "churu", "啾噜", "Inaba Ciao", "伊纳宝"]
+    "aliases": [
+      "ciao",
+      "CIAO啾噜",
+      "伊纳宝啾噜",
+      "churu",
+      "啾噜",
+      "Inaba Ciao",
+      "伊纳宝"
+    ]
   },
   {
     "canonical": "Aixia",
-    "aliases": ["爱喜雅", "aixia", "AIXIA", "玛鲁哈"]
+    "aliases": [
+      "爱喜雅",
+      "aixia",
+      "AIXIA",
+      "玛鲁哈"
+    ]
   },
   {
     "canonical": "Dolina Noteci",
-    "aliases": ["dolina noteci", "DolinaNoteci", "杜莲洛迪", "DN"]
+    "aliases": [
+      "dolina noteci",
+      "DolinaNoteci",
+      "杜莲洛迪",
+      "DN"
+    ]
   },
   {
     "canonical": "Brit",
-    "aliases": ["brit", "Brit Care", "Brit Premium", "捷克宝", "捷克brit"]
+    "aliases": [
+      "brit",
+      "Brit Care",
+      "Brit Premium",
+      "捷克宝",
+      "捷克brit"
+    ]
   },
   {
     "canonical": "Farmina",
-    "aliases": ["法米娜", "farmina", "N&D", "法明娜", "Farmina N&D"]
+    "aliases": [
+      "法米娜",
+      "farmina",
+      "N&D",
+      "法明娜",
+      "Farmina N&D"
+    ]
   },
   {
     "canonical": "Monge",
-    "aliases": ["梦吉", "monge", "MONGE", "意大利梦吉"]
+    "aliases": [
+      "梦吉",
+      "monge",
+      "MONGE",
+      "意大利梦吉"
+    ]
   },
   {
     "canonical": "Schesir",
-    "aliases": ["雪诗雅", "schesir", "SCHESIR", "意大利雪诗雅"]
+    "aliases": [
+      "雪诗雅",
+      "schesir",
+      "SCHESIR",
+      "意大利雪诗雅"
+    ]
   },
   {
     "canonical": "Almo Nature",
-    "aliases": ["almo nature", "AlmoNature", "阿尔莫"]
+    "aliases": [
+      "almo nature",
+      "AlmoNature",
+      "阿尔莫"
+    ]
   },
   {
     "canonical": "Stuzzy",
-    "aliases": ["stuzzy", "Stuzzy Cat"]
+    "aliases": [
+      "stuzzy",
+      "Stuzzy Cat"
+    ]
   },
   {
     "canonical": "Virbac",
-    "aliases": ["维克", "virbac", "VIRBAC", "HPM"]
+    "aliases": [
+      "维克",
+      "virbac",
+      "VIRBAC",
+      "HPM"
+    ]
   },
   {
     "canonical": "Ultima",
-    "aliases": ["ultima", "ULTIMA", "优极"]
+    "aliases": [
+      "ultima",
+      "ULTIMA",
+      "优极"
+    ]
   },
   {
     "canonical": "Pro-Nutrition",
-    "aliases": ["pro nutrition", "ProNutrition", "法国普罗"]
+    "aliases": [
+      "pro nutrition",
+      "ProNutrition",
+      "法国普罗"
+    ]
   },
   {
     "canonical": "Lily's Kitchen",
-    "aliases": ["lily's kitchen", "Lilys Kitchen", "莉莉厨房"]
+    "aliases": [
+      "lily's kitchen",
+      "Lilys Kitchen",
+      "莉莉厨房"
+    ]
   },
   {
     "canonical": "ZIWI Peak",
-    "aliases": ["巅峰", "ziwi", "ZIWI", "ziwi peak", "滋益巅峰"]
+    "aliases": [
+      "巅峰",
+      "ziwi",
+      "ZIWI",
+      "ziwi peak",
+      "滋益巅峰"
+    ]
   },
   {
     "canonical": "K9 Natural",
-    "aliases": ["k9 natural", "K9Natural", "K9"]
+    "aliases": [
+      "k9 natural",
+      "K9Natural",
+      "K9"
+    ]
   },
   {
     "canonical": "Feline Natural",
-    "aliases": ["feline natural", "FelineNatural"]
+    "aliases": [
+      "feline natural",
+      "FelineNatural"
+    ]
   },
   {
     "canonical": "Silver Spoon",
-    "aliases": ["银勺", "银之匙", "gin no spoon", "Gin No Spoon", "佳乐滋银勺", "Unicharm"]
+    "aliases": [
+      "银勺",
+      "银之匙",
+      "gin no spoon",
+      "Gin No Spoon",
+      "佳乐滋银勺",
+      "Unicharm"
+    ]
   },
   {
     "canonical": "Miamor",
-    "aliases": ["miamor", "Miamor", "迈阿咪", "迈阿密猫"]
+    "aliases": [
+      "miamor",
+      "Miamor",
+      "迈阿咪",
+      "迈阿密猫"
+    ]
   },
   {
     "canonical": "Affinity",
-    "aliases": ["affinity", "Brekkies", "brekkies", "Brekkies猫"]
+    "aliases": [
+      "affinity",
+      "Brekkies",
+      "brekkies",
+      "Brekkies猫"
+    ]
   },
   {
     "canonical": "Opti Life",
-    "aliases": ["opti life", "OptiLife", "比利时欧帝亿"]
+    "aliases": [
+      "opti life",
+      "OptiLife",
+      "比利时欧帝亿"
+    ]
   },
   {
     "canonical": "Lukullus",
-    "aliases": ["lukullus", "Lukullus", "路酷斯"]
+    "aliases": [
+      "lukullus",
+      "Lukullus",
+      "路酷斯"
+    ]
   },
   {
     "canonical": "Porta 21",
-    "aliases": ["porta 21", "Porta21", "德国21"]
+    "aliases": [
+      "porta 21",
+      "Porta21",
+      "德国21"
+    ]
   },
   {
     "canonical": "Terra Felis",
-    "aliases": ["terra felis", "TerraFelis"]
+    "aliases": [
+      "terra felis",
+      "TerraFelis"
+    ]
   },
   {
     "canonical": "Thrive",
-    "aliases": ["thrive", "Thrive", "英国 thrive"]
+    "aliases": [
+      "thrive",
+      "Thrive",
+      "英国 thrive"
+    ]
   },
   {
     "canonical": "Encore",
-    "aliases": ["encore", "Encore", "安可"]
+    "aliases": [
+      "encore",
+      "Encore",
+      "安可"
+    ]
+  },
+  {
+    "canonical": "Pedigree",
+    "aliases": [
+      "pedigree",
+      "宝路"
+    ]
+  },
+  {
+    "canonical": "Cesar",
+    "aliases": [
+      "cesar",
+      "西莎"
+    ]
+  },
+  {
+    "canonical": "Royal Canin Veterinary",
+    "aliases": [
+      "royal canin vet",
+      "皇家处方",
+      "RC vet"
+    ]
+  },
+  {
+    "canonical": "Apoquel",
+    "aliases": [
+      "apoquel",
+      "阿泊昔替尼",
+      "奥克来"
+    ]
+  },
+  {
+    "canonical": "Cytopoint",
+    "aliases": [
+      "cytopoint",
+      "赛妥珠"
+    ]
+  },
+  {
+    "canonical": "Galliprant",
+    "aliases": [
+      "galliprant"
+    ]
+  },
+  {
+    "canonical": "Rimadyl",
+    "aliases": [
+      "rimadyl",
+      "卡布洛芬"
+    ]
+  },
+  {
+    "canonical": "Metacam",
+    "aliases": [
+      "metacam",
+      "美洛昔康",
+      "meloxicam"
+    ]
+  },
+  {
+    "canonical": "Gabapentin",
+    "aliases": [
+      "gabapentin",
+      "加巴喷丁"
+    ]
+  },
+  {
+    "canonical": "Thyroid medication",
+    "aliases": [
+      "甲状腺药",
+      "methimazole",
+      "甲巯咪唑",
+      "felimazole"
+    ]
+  },
+  {
+    "canonical": "Heartgard",
+    "aliases": [
+      "heartgard",
+      "心丝虫药"
+    ]
+  },
+  {
+    "canonical": "NexGard",
+    "aliases": [
+      "nexgard",
+      "尼克斯加德"
+    ]
+  },
+  {
+    "canonical": "Revolution",
+    "aliases": [
+      "revolution",
+      "大宠爱",
+      "selamectin"
+    ]
+  },
+  {
+    "canonical": "Drontal",
+    "aliases": [
+      "drontal",
+      "拜耳驱虫"
+    ]
+  },
+  {
+    "canonical": "Cosequin",
+    "aliases": [
+      "cosequin",
+      "关节保健"
+    ]
   }
 ]

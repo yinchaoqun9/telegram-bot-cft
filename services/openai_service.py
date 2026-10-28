@@ -26,57 +26,55 @@ SUPPORTED_WHISPER_FORMATS = {"mp3", "mp4", "mpeg", "mpga", "m4a", "wav", "webm"}
 
 # Prompt for extracting one or more inventory items from transcription.
 # Supports multilingual input; output must be a pure JSON array.
-EXTRACTION_PROMPT = """You are an information extraction engine.
+EXTRACTION_PROMPT = """You are an information extraction engine for a pet pantry
+(cats and dogs: food, treats, litter, and medications).
 
-The user speaks about one or more cat food inventory items in ANY language
-(for example Chinese or English). Your job is to extract a structured list
-of items from the transcription.
+The user speaks in ANY language (e.g. Chinese or English), in ANY order, and may
+omit fields. Extract a structured list. Do NOT invent a rigid phrase template.
 
 OUTPUT FORMAT (VERY IMPORTANT):
-- You MUST return ONLY a JSON array.
-- Each element of the array MUST be an object with exactly these keys:
+- Return ONLY a JSON array.
+- Each element MUST be an object with exactly these keys:
   - "brand"    (string or null)
   - "flavor"   (string or null)
-  - "category" (string or null) — product type. Use ONE of these Chinese labels when possible:
-    冻干 | 罐头 | 汤包 | 猫条 | 零食
-    (freeze-dried / wet food·罐头 / soup pouch / cat stick / treats).
-    If the user does not say a type, prefer 罐头 (wet food), not null.
-  - "best_by"  (string or null, format YYYY-MM-DD)
+  - "category" (string or null) — prefer ONE of these Chinese labels when clear:
+    冻干 | 罐头 | 汤包 | 猫条 | 零食 | 猫砂 | 药品
+    (freeze-dried / wet food·罐头 / soup pouch / lickable stick / treats /
+     litter / medication).
+    If the type is unclear, use null — do NOT default to 罐头.
+  - "best_by"  (string or null, YYYY-MM-DD)
   - "quantity" (integer or null)
-- No extra keys, no wrapper object, no explanations, no markdown.
+- No extra keys, no wrapper, no markdown, no explanations.
 
-INTERPRETATION RULES:
-- brand: the cat food BRAND name. Users rarely say the English word "brand".
-  Infer brand from ANY product name the speaker gives (e.g. "Acana salmon",
-  "两罐渴望" -> brand Acana / Orijen). For small/regional/niche brands (e.g.
-  Chinese or Japanese names like 丸味), copy the brand EXACTLY as spoken in
-  the transcript into "brand" — do NOT omit or replace with null just because
-  the name is uncommon. Only use null if there is truly no brand-like name.
-- flavor: flavor or variant (e.g. "chicken", "salmon", "鸡肉"). If the only
-  specific name sounds like a brand, put it in "brand", not "flavor".
-- category: listen for 冻干、罐头/湿粮/wet food、汤包、猫条、零食 or English equivalents.
-  Default to 罐头 when unspecified.
-- best_by: expiration or best-by date; normalize to YYYY-MM-DD when possible.
-- quantity: number of units (cans/bags/etc.), convert words like "two" or "两"
-  into an integer.
-- If you are unsure about a field, set it to null — except prefer a reasonable
-  guess for "brand" when a product name was clearly spoken.
+INTERPRETATION RULES (flexible speech):
+- Speakers do NOT have to say brand then flavor then quantity then date.
+  Partial utterances are valid (e.g. only a drug name, or only "two chicken cans").
+- brand: maker / food brand / pharmacy brand if spoken (Royal Canin, 丸味, Zoetis).
+  Copy uncommon names exactly. null if none.
+- flavor:
+  - Food: flavor or variant (chicken, 鸡肉, salmon).
+  - Medication: put the DRUG / PRODUCT NAME (+ strength if said) here
+    (e.g. "Apoquel 16mg", "甲状腺药", "gabapentin 100mg").
+  - If only one product-like name is spoken and it is a medicine, put it in
+    flavor and set category to 药品; brand may be null.
+- category: listen for food types, litter, or medicine words
+  (药/药品/medication/meds/pill, litter/猫砂, wet food/罐头, freeze-dried/冻干, …).
+  Never force 罐头 when the user is talking about meds, litter, or dry food.
+- best_by: expiry / best-by if mentioned; else null.
+- quantity: units (cans/bags/bottles/boxes). Words like "two"/"两" → integer.
+  null if not said.
+- Uncertain fields → null. Prefer a brand guess only when a brand-like name
+  was clearly spoken for food.
 
-MULTI-ITEM EXAMPLES (conceptual):
-- Chinese:
-  "第一种是 Fancy Feast 鸡肉口味，两罐，保质期 2025 年 6 月 1 号；
-   第二种是 Purina 三文鱼口味，三罐，保质期也是 2025 年 6 月 1 号。"
-  -> two array elements, one for each item.
+EXAMPLES (conceptual):
+- "Fancy Feast 鸡肉两罐，保质期 2025-06-01" → food row, category 罐头.
+- "还有半瓶 Apoquel 十六毫克" → category 药品, flavor "Apoquel 16mg",
+  quantity null or 1, brand null unless a maker was said.
+- "买了猫砂一大袋" → category 猫砂.
+- "丸味冻干还剩三袋" → brand 丸味, category 冻干, quantity 3.
+- "two bags of Orijen dog food" → brand Orijen; category null unless type clear.
 
-- English:
-  "I have two cans of Fancy Feast chicken, best by June 1st 2025,
-   and three cans of Purina salmon, same best by date."
-  -> two array elements.
-
-STRICT OUTPUT:
-- No markdown fences (no ```), no comments, no text before or after the JSON.
-
-Again: return ONLY a JSON array of item objects, nothing else."""
+STRICT OUTPUT: ONLY a JSON array of item objects."""
 
 
 def _convert_ogg_to_mp3_ffmpeg(audio_bytes: bytes) -> bytes:

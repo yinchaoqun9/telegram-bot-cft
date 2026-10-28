@@ -5,6 +5,9 @@ Daily digest: expiring inventory grouped by window (0–7 days vs 8–15 days).
 For each user in telegram_users with matching rows, sends one message with
 optional inline "Used" buttons (see REMINDER_DIGEST_MAX_BUTTONS).
 
+Household members each receive the same shared-pantry digest (always on).
+Partner alerts for voice/Open/Used are separate and opt-in via /notify.
+
 Run manually:
     python send_reminders.py
 

@@ -33,6 +33,8 @@ _CATEGORY_TOKENS = {
     "汤包",
     "猫条",
     "零食",
+    "猫砂",
+    "药品",
     "湿粮",
     "wet",
     "wetfood",
@@ -45,6 +47,12 @@ _CATEGORY_TOKENS = {
     "treat",
     "treats",
     "cat stick",
+    "litter",
+    "cat litter",
+    "med",
+    "meds",
+    "medicine",
+    "medication",
     "主食罐",
     "湿粮罐",
     "猫罐头",
@@ -140,7 +148,7 @@ def _token_as_category(tok: str) -> str:
         return ""
     if t.lower() not in {c.lower() for c in _CATEGORY_TOKENS} and t not in _CATEGORY_TOKENS:
         # still allow exact normalize if the whole token is exactly a canonical
-        if t in ("冻干", "罐头", "汤包", "猫条", "零食"):
+        if t in ("冻干", "罐头", "汤包", "猫条", "零食", "猫砂", "药品"):
             return t
         return ""
     return normalize_category(t, "", default="")

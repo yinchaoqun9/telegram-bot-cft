@@ -312,7 +312,7 @@ async def process_voice_message(
         cat_raw = (
             str(raw.get("category")) if raw.get("category") is not None else ""
         ).strip()
-        category = normalize_category(cat_raw, transcription)
+        category = normalize_category(cat_raw, transcription, default="")
         try:
             quantity = int(raw.get("quantity") or 0)
         except (TypeError, ValueError):
@@ -365,8 +365,43 @@ async def process_voice_message(
             user_id,
             chat_id,
         )
+        preview = ", ".join(
+            (
+                f"{(r.get('brand') or '').strip()} {(r.get('flavor') or '').strip()}".strip()
+                or (r.get("category") or "item")
+            )
+            for r in inserted_rows[:3]
+        )
+        more = "" if len(inserted_rows) <= 3 else f" (+{len(inserted_rows) - 3} more)"
+        await notify_household_partners(
+            user_id,
+            f"Household update: voice logged {len(inserted_rows)} item(s) — {preview}{more}.",
+        )
     except Exception as e:
         logger.exception("Failed to send confirmation to user: %s", e)
+
+
+async def notify_household_partners(actor_user_id, text: str) -> None:
+    """
+    Ping other household members who opted into change alerts.
+    Expiry digests are always sent separately to every member (send_reminders).
+    """
+    try:
+        partners = await get_supabase().partners_wanting_notify(str(actor_user_id))
+    except Exception:
+        logger.exception("partners_wanting_notify failed")
+        return
+    if not partners:
+        return
+    tg = get_telegram()
+    for p in partners:
+        chat_id = p.get("chat_id")
+        if chat_id is None:
+            continue
+        try:
+            await tg.send_message(int(chat_id), text, parse_mode=None)
+        except Exception:
+            logger.exception("partner notify failed chat_id=%s", chat_id)
 
 
 async def try_delete_saved_row(user_id: int, item_id: str) -> Tuple[bool, str]:
@@ -376,6 +411,9 @@ async def try_delete_saved_row(user_id: int, item_id: str) -> Tuple[bool, str]:
         return False, "Missing item id."
     try:
         await get_supabase().delete_inventory_item(str(user_id), tid)
+        await notify_household_partners(
+            user_id, f"Household update: someone deleted an inventory row."
+        )
         return True, "Entry deleted."
     except SupabaseServiceError as e:
         return False, str(e) or "Could not delete."
@@ -390,12 +428,32 @@ async def try_decrement_inventory(user_id: int, item_id: str) -> Tuple[bool, str
         status = await get_supabase().decrement_item_quantity(
             str(user_id), tid, delta=1
         )
+        await notify_household_partners(
+            user_id, f"Household update: Used −1 on an item (id {tid[:8]}…)."
+        )
         if status == "deleted":
             return True, "Removed from inventory (quantity reached 0)."
         return True, "Quantity reduced by 1."
     except SupabaseServiceError as e:
         msg = str(e) or "Could not update item."
         return False, msg
+
+
+async def try_open_inventory(user_id: int, item_id: str) -> Tuple[bool, str]:
+    """Open −1: stamp opened_at (if missing) and decrement quantity."""
+    tid = (item_id or "").strip()
+    if not tid:
+        return False, "Missing item id."
+    try:
+        status = await get_supabase().open_item(str(user_id), tid, delta=1)
+        await notify_household_partners(
+            user_id, f"Household update: Opened −1 (id {tid[:8]}…)."
+        )
+        if status == "deleted":
+            return True, "Opened last unit; removed from inventory."
+        return True, "Opened −1 (quantity reduced)."
+    except SupabaseServiceError as e:
+        return False, str(e) or "Could not update item."
 
 
 async def start_item_fix(user_id: int, item_id: str) -> str:
@@ -565,13 +623,10 @@ async def handle_callback_query(callback: dict) -> None:
         return
     if data.startswith("u:") or data.startswith("o:"):
         item_id = data[2:].strip()
-        ok, detail = await try_decrement_inventory(int(user_id), item_id)
-        if ok and data.startswith("o:"):
-            detail = (
-                "Opened −1."
-                if "reduced" in detail.lower()
-                else detail
-            )
+        if data.startswith("o:"):
+            ok, detail = await try_open_inventory(int(user_id), item_id)
+        else:
+            ok, detail = await try_decrement_inventory(int(user_id), item_id)
         try:
             await tg.answer_callback_query(
                 cq_id,
@@ -605,6 +660,107 @@ async def handle_callback_query(callback: dict) -> None:
         logger.exception("answerCallbackQuery failed")
 
 
+async def handle_household_command(chat_id: int, user_id: int, text: str) -> None:
+    """
+    /household — status or create
+    /join CODE — join shared pantry
+    /leave — leave pantry
+    /notify on|off — partner change alerts (digest always on for both)
+    """
+    from services.household_service import HouseholdError, free_max_members
+
+    tg = get_telegram()
+    raw = (text or "").strip()
+    parts = raw.split()
+    cmd = parts[0].split("@")[0].lower() if parts else ""
+    supa = get_supabase()
+
+    try:
+        if cmd == "/join":
+            code = parts[1] if len(parts) > 1 else ""
+            if not code:
+                await tg.send_message(
+                    chat_id,
+                    "Usage: /join PET-XXXX\nAsk your partner for their invite code.",
+                    parse_mode=None,
+                )
+                return
+            summary = await supa.join_household(str(user_id), code)
+            await tg.send_message(
+                chat_id,
+                "Joined shared pantry.\n"
+                f"Code: {summary.get('invite_code')}\n"
+                f"Members: {summary.get('member_count')}/{summary.get('max_members')}\n"
+                "Expiry digests go to everyone. "
+                "Optional live alerts: /notify on",
+                parse_mode=None,
+            )
+            return
+
+        if cmd == "/leave":
+            msg = await supa.leave_household(str(user_id))
+            await tg.send_message(chat_id, msg, parse_mode=None)
+            return
+
+        if cmd == "/notify":
+            arg = (parts[1] if len(parts) > 1 else "").lower()
+            if arg not in ("on", "off"):
+                await tg.send_message(
+                    chat_id,
+                    "Usage: /notify on  or  /notify off\n"
+                    "Turns partner alerts for voice / Open / Used on or off.\n"
+                    "Expiry digests always go to every household member.",
+                    parse_mode=None,
+                )
+                return
+            enabled = arg == "on"
+            await supa.set_notify_partner(str(user_id), enabled)
+            await tg.send_message(
+                chat_id,
+                "Partner change alerts: ON."
+                if enabled
+                else "Partner change alerts: OFF (digests still arrive).",
+                parse_mode=None,
+            )
+            return
+
+        # /household
+        summary = await supa.get_household_summary(str(user_id))
+        if summary:
+            await tg.send_message(
+                chat_id,
+                "Shared pantry\n"
+                f"Invite code: {summary.get('invite_code')}\n"
+                f"Members: {summary.get('member_count')}/{summary.get('max_members')} "
+                f"(free plan ≤{free_max_members()})\n"
+                f"Your partner alerts: "
+                f"{'ON' if summary.get('notify_partner_changes') else 'OFF'}\n\n"
+                "Share the code · /notify on|off · /leave",
+                parse_mode=None,
+            )
+            return
+        summary = await supa.create_household(str(user_id))
+        await tg.send_message(
+            chat_id,
+            "Created a shared pantry (free for 2 people).\n"
+            f"Invite code: {summary.get('invite_code')}\n"
+            "Partner runs: /join " + str(summary.get("invite_code")) + "\n"
+            "Both get expiry digests. Optional live alerts: /notify on",
+            parse_mode=None,
+        )
+    except HouseholdError as e:
+        await tg.send_message(chat_id, str(e), parse_mode=None)
+    except SupabaseServiceError as e:
+        await tg.send_message(chat_id, f"Household error: {e}", parse_mode=None)
+    except Exception as e:
+        logger.exception("household command failed: %s", e)
+        await tg.send_message(
+            chat_id,
+            "Household tables may be missing. Ask admin to run the SQL in README.",
+            parse_mode=None,
+        )
+
+
 async def handle_used_command(chat_id: int, user_id: int, text: str) -> None:
     """Parse /used or /open <item_id> (supports @BotName)."""
     raw = (text or "").strip()
@@ -624,9 +780,10 @@ async def handle_used_command(chat_id: int, user_id: int, text: str) -> None:
             logger.exception("send_message failed: %s", e)
         return
     item_id = parts[1].strip()
-    ok, detail = await try_decrement_inventory(user_id, item_id)
-    if ok and cmd == "/open" and "reduced" in detail.lower():
-        detail = "Opened −1 (quantity reduced)."
+    if cmd == "/open":
+        ok, detail = await try_open_inventory(user_id, item_id)
+    else:
+        ok, detail = await try_decrement_inventory(user_id, item_id)
     try:
         await tg.send_message(
             chat_id,
@@ -811,9 +968,10 @@ async def webhook(request: Request) -> Response:
                 )
                 await tg.send_message(
                     chat_id,
-                    "Send a voice message: brand, category (冻干/罐头/汤包/猫条/零食), flavor, best-by, quantity.\n\n"
-                    "After saving: Fix (brand/qty/category) · Open −1 · Delete\n"
-                    "Or /fix <id> · /open <id> · /used <id>."
+                    "Pet Pantry — voice-log cat/dog food, litter, and meds.\n"
+                    "After saving: Fix · Open −1 · Delete\n"
+                    "/fix · /open · /used\n"
+                    "Share pantry (free for 2): /household · /join CODE · /notify on|off"
                     + dash_line,
                     parse_mode=None,
                 )
@@ -824,6 +982,11 @@ async def webhook(request: Request) -> Response:
                 await handle_used_command(chat_id, user_id, text_raw)
             except Exception:
                 logger.exception("handle_used_command failed")
+        elif cmd0 in ("/household", "/join", "/leave", "/notify"):
+            try:
+                await handle_household_command(chat_id, user_id, text_raw)
+            except Exception:
+                logger.exception("handle_household_command failed")
         elif cmd0 == "/fix":
             try:
                 await handle_fix_command(chat_id, user_id, text_raw)

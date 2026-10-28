@@ -7,7 +7,7 @@ Production-ready Telegram bot backend that processes voice notes, **transcribes*
 - **Webhook-based**: Receives Telegram updates via webhook
 - **Voice processing**: Downloads voice notes; STT chain **Gemini `gemini-3.5-transcribe` → OpenAI `gpt-transcribe` → AssemblyAI `universal-3-5-pro`**
 - **Structured extraction**: **Gemini** JSON extraction by default, falls back to **GPT**; brand strings are then matched to a **local brand map** (`rapidfuzz`)
-- **Supabase storage**: Inserts into `cat_inventory` (incl. `category`: 冻干 / 罐头 / 汤包 / 猫条 / 零食)
+- **Supabase storage**: Inserts into `cat_inventory` (incl. `category`: 冻干 / 罐头 / 汤包 / 猫条 / 零食 / 猫砂 / 药品; optional `opened_at`)
 - **Brand resolution**: Fuzzy match on LLM `brand` plus **substring match of the full transcript** against the local brand list (no extra API calls); helps niche names when the model omits or mislabels the brand
 - **User confirmation**: Sends confirmation message back to the user
 - **Expiry digest**: Daily job groups items expiring in **0–7 days** and **8–15 days** (configurable window); inline **Used** buttons or `/used <item_id>` decrease quantity (row deleted at 0)
@@ -62,12 +62,17 @@ CREATE TABLE cat_inventory (
   category TEXT NOT NULL DEFAULT '',
   best_by DATE,
   quantity INTEGER NOT NULL DEFAULT 0,
+  opened_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- Existing projects: add category (冻干/罐头/汤包/猫条/零食)
+-- Existing projects: add category (冻干/罐头/汤包/猫条/零食/猫砂/药品)
 ALTER TABLE cat_inventory
   ADD COLUMN IF NOT EXISTS category TEXT NOT NULL DEFAULT '';
+
+-- Open −1 stamps when a lot was opened (for after-open shelf life)
+ALTER TABLE cat_inventory
+  ADD COLUMN IF NOT EXISTS opened_at TIMESTAMPTZ;
 
 -- Optional: drop legacy column if you added it for old per-offset reminders
 -- ALTER TABLE cat_inventory DROP COLUMN IF EXISTS reminded_offsets;
@@ -112,19 +117,26 @@ CREATE TABLE IF NOT EXISTS brand_corrections (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- Future: household sharing (not wired in app yet)
--- CREATE TABLE households (
---   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
---   name TEXT NOT NULL DEFAULT '',
---   invite_code TEXT UNIQUE,
---   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
--- );
--- CREATE TABLE household_members (
---   household_id UUID REFERENCES households(id),
---   user_id TEXT NOT NULL,
---   role TEXT NOT NULL DEFAULT 'member',
---   PRIMARY KEY (household_id, user_id)
--- );
+-- Household sharing (free plan: 2 members; digest always to both)
+CREATE TABLE IF NOT EXISTS households (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name TEXT NOT NULL DEFAULT 'Pet Pantry',
+  invite_code TEXT UNIQUE NOT NULL,
+  created_by TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE TABLE IF NOT EXISTS household_members (
+  household_id UUID NOT NULL REFERENCES households(id) ON DELETE CASCADE,
+  user_id TEXT NOT NULL,
+  role TEXT NOT NULL DEFAULT 'member',
+  notify_partner_changes BOOLEAN NOT NULL DEFAULT FALSE,
+  joined_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY (household_id, user_id)
+);
+ALTER TABLE cat_inventory
+  ADD COLUMN IF NOT EXISTS household_id UUID;
+ALTER TABLE cat_inventory
+  ADD COLUMN IF NOT EXISTS last_acted_by TEXT;
 ```
 
 ### Training layer (Fix)
@@ -134,7 +146,7 @@ After a voice save, tap **Fix** → send one line; the bot auto-detects:
 - a **category** (`罐头` / `wet food` / `冻干` / …) → category  
 - otherwise → **brand** (and learns `wrong → correct` for that user)
 
-Or `/fix brand|quantity|category <item_id> <value>`. Default category when unspecified is **罐头 (wet food)**. **Open −1** = used one pack/can.
+Or `/fix brand|quantity|category <item_id> <value>`. Category is optional (no forced wet-food default). Meds use `category=药品` and put the drug name in `flavor`. **Open −1** = stamp `opened_at` + reduce qty by 1.
 
 Learning is **not** fine-tuning the LLM: corrections go into `user_brand_aliases` and are applied on the next voice note *before* the global catalog / model output.
 
