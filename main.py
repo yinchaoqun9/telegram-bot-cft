@@ -263,6 +263,22 @@ async def process_voice_message(
         )
         return
 
+    # 2b. Consume intents (open/used) skip inventory extraction
+    from services.consume_intent import detect_consume_intent
+
+    consume_action, consume_query = detect_consume_intent(transcription)
+    if consume_action:
+        try:
+            await tg.send_message(
+                chat_id,
+                f"Heard: {transcription.strip()[:200]}",
+                parse_mode=None,
+            )
+        except Exception:
+            logger.exception("failed to echo consume transcript")
+        await apply_consume_match(chat_id, user_id, consume_action, consume_query)
+        return
+
     # 3. Extract structured data (Gemini preferred, else GPT) - may return multiple items
     try:
         raw_items = await extract_preferred(
@@ -420,7 +436,7 @@ async def try_delete_saved_row(user_id: int, item_id: str) -> Tuple[bool, str]:
 
 
 async def try_decrement_inventory(user_id: int, item_id: str) -> Tuple[bool, str]:
-    """Decrease quantity by 1 for user's item. Returns (success, user-facing detail)."""
+    """Used: finish oldest open lot if any, else sealed qty −1."""
     tid = (item_id or "").strip()
     if not tid:
         return False, "Missing item id."
@@ -429,18 +445,20 @@ async def try_decrement_inventory(user_id: int, item_id: str) -> Tuple[bool, str
             str(user_id), tid, delta=1
         )
         await notify_household_partners(
-            user_id, f"Household update: Used −1 on an item (id {tid[:8]}…)."
+            user_id, f"Household update: Used on an item (id {tid[:8]}…)."
         )
+        if status == "finished_open":
+            return True, "Finished an open lot (sealed qty unchanged)."
         if status == "deleted":
             return True, "Removed from inventory (quantity reached 0)."
-        return True, "Quantity reduced by 1."
+        return True, "Sealed quantity reduced by 1."
     except SupabaseServiceError as e:
         msg = str(e) or "Could not update item."
         return False, msg
 
 
 async def try_open_inventory(user_id: int, item_id: str) -> Tuple[bool, str]:
-    """Open −1: stamp opened_at (if missing) and decrement quantity."""
+    """Open: sealed qty −1 + insert open_lots row."""
     tid = (item_id or "").strip()
     if not tid:
         return False, "Missing item id."
@@ -450,10 +468,252 @@ async def try_open_inventory(user_id: int, item_id: str) -> Tuple[bool, str]:
             user_id, f"Household update: Opened −1 (id {tid[:8]}…)."
         )
         if status == "deleted":
-            return True, "Opened last unit; removed from inventory."
-        return True, "Opened −1 (quantity reduced)."
+            return True, "Opened last sealed unit."
+        return True, "Opened −1 (new open lot; sealed qty −1)."
     except SupabaseServiceError as e:
         return False, str(e) or "Could not update item."
+
+
+def _item_label(row: dict) -> str:
+    brand = (row.get("brand") or "").strip()
+    flavor = (row.get("flavor") or "").strip()
+    cat = (row.get("category") or "").strip()
+    qty = int(row.get("quantity") or 0)
+    open_n = int(row.get("open_lots_count") or (1 if row.get("has_open_lot") else 0))
+    bits = [x for x in (brand, flavor) if x]
+    name = " ".join(bits) or "item"
+    cpre = f"[{cat}] " if cat else ""
+    open_bit = f", open×{open_n}" if open_n else ""
+    return f"{cpre}{name} (qty {qty}{open_bit})"
+
+
+def _consume_pick_keyboard(
+    action: str, candidates: list
+) -> tuple:
+    """Build (text_lines_extra_unused, inline_keyboard) for open/used picks."""
+    prefix = "o:" if action == "open" else "u:"
+    verb = "Open" if action == "open" else "Used"
+    keyboard = []
+    for row in candidates:
+        iid = str(row.get("id") or "")
+        if not iid:
+            continue
+        brand = ((row.get("brand") or "") + " " + (row.get("flavor") or "")).strip()
+        label = f"{verb} {brand}".strip()[:40] or verb
+        cb = f"{prefix}{iid}"
+        if len(cb.encode("utf-8")) > 64:
+            continue
+        keyboard.append([{"text": label, "callback_data": cb}])
+    return keyboard
+
+
+async def _send_consume_pick(
+    chat_id: int, action: str, candidates: list, *, header: str
+) -> None:
+    tg = get_telegram()
+    keyboard = _consume_pick_keyboard(action, candidates)
+    text = header + "\n" + "\n".join(f"• {_item_label(r)}" for r in candidates)
+    if keyboard:
+        await tg.send_message_with_inline_keyboard(
+            chat_id, text, keyboard, parse_mode=None
+        )
+    else:
+        await tg.send_message(chat_id, text, parse_mode=None)
+
+
+async def apply_consume_match(
+    chat_id: int, user_id: int, action: str, query: str
+) -> bool:
+    """
+    Match pantry rows for open|used from voice/text.
+    Returns True if a consume reply was sent (caller should skip inventory extract).
+    Soft (no score hit) candidates never auto-apply — buttons only.
+    """
+    from services.inventory_match import score_item, suggest_consume_candidates
+
+    tg = get_telegram()
+    items = await get_supabase().list_inventory_for_user(str(user_id))
+    candidates, strict = suggest_consume_candidates(
+        items, query, action=action, limit=3
+    )
+    if not candidates:
+        if not items:
+            msg = (
+                "Your pantry is empty. Send a voice note to log something first."
+            )
+        elif action == "open":
+            msg = (
+                f"Couldn't match “{query or action}”, and nothing has sealed "
+                "stock left to open.\nTry /today or log more with a voice note."
+            )
+        else:
+            msg = (
+                f"Couldn't match “{query or action}”, and nothing is available "
+                "to mark used.\nTry /today or log more with a voice note."
+            )
+        await tg.send_message(chat_id, msg, parse_mode=None)
+        return True
+
+    if not strict:
+        qshow = (query or "").strip() or action
+        await _send_consume_pick(
+            chat_id,
+            action,
+            candidates,
+            header=(
+                f"Couldn't match “{qshow}”. Closest in your pantry — tap one:"
+            ),
+        )
+        return True
+
+    top = candidates[0]
+    # Auto-apply only for strict hits: single hit, or clear winner vs runner-up
+    auto = len(candidates) == 1
+    if not auto and len(candidates) >= 2:
+        s0 = score_item(query, candidates[0])
+        s1 = score_item(query, candidates[1])
+        auto = bool(query.strip()) and s0 >= s1 + 25 and s0 >= 40
+
+    if auto:
+        iid = str(top.get("id") or "")
+        if action == "open":
+            ok, detail = await try_open_inventory(user_id, iid)
+        else:
+            ok, detail = await try_decrement_inventory(user_id, iid)
+        label = _item_label(top)
+        await tg.send_message(
+            chat_id,
+            (f"{'Opened' if action == 'open' else 'Used'}: {label}\n{detail}")
+            if ok
+            else f"Could not update: {detail}",
+            parse_mode=None,
+        )
+        return True
+
+    await _send_consume_pick(
+        chat_id,
+        action,
+        candidates,
+        header=f"Which item to {action}?",
+    )
+    return True
+
+
+async def handle_consume_text(chat_id: int, user_id: int, text: str) -> bool:
+    """If text is open/used intent, handle and return True."""
+    from services.consume_intent import detect_consume_intent
+
+    action, query = detect_consume_intent(text or "")
+    if not action:
+        return False
+    return await apply_consume_match(chat_id, user_id, action, query)
+
+
+def _sort_pantry_browse(items: list) -> list:
+    """Open lots first, then soonest best_by, then higher qty."""
+
+    def key(it: dict):
+        has_open = 0 if it.get("has_open_lot") else 1
+        bb = str(it.get("best_by") or "9999-99-99")
+        return (has_open, bb, -(int(it.get("quantity") or 0)))
+
+    return sorted(items, key=key)
+
+
+def _open_used_row_buttons(r: dict) -> list:
+    iid = str(r.get("id") or "")
+    if not iid:
+        return []
+    brand = ((r.get("brand") or "") + " " + (r.get("flavor") or "")).strip()[:18]
+    row_btns = []
+    if int(r.get("quantity") or 0) > 0:
+        cb_o = f"o:{iid}"
+        if len(cb_o.encode("utf-8")) <= 64:
+            label = f"Open {brand}".strip()[:40] or "Open"
+            row_btns.append({"text": label, "callback_data": cb_o})
+    cb_u = f"u:{iid}"
+    if len(cb_u.encode("utf-8")) <= 64:
+        label = f"Used {brand}".strip()[:40] or "Used"
+        row_btns.append({"text": label, "callback_data": cb_u})
+    return row_btns
+
+
+async def handle_today_command(chat_id: int, user_id: int) -> None:
+    """Suggest up to 3 eatable items for today (open lots first)."""
+    from services.inventory_match import pick_eat_today
+
+    tg = get_telegram()
+    items = await get_supabase().list_inventory_for_user(str(user_id))
+    picks = pick_eat_today(items, limit=3)
+    if not picks:
+        await tg.send_message(
+            chat_id,
+            "No eatable pantry items right now. Log something with a voice note.",
+            parse_mode=None,
+        )
+        return
+    lines = ["Today’s picks (open lots first):"]
+    keyboard = []
+    for r in picks:
+        lines.append(f"• {_item_label(r)}")
+        row_btns = _open_used_row_buttons(r)
+        if row_btns:
+            keyboard.append(row_btns)
+    text = "\n".join(lines)
+    if keyboard:
+        await tg.send_message_with_inline_keyboard(
+            chat_id, text, keyboard, parse_mode=None
+        )
+    else:
+        await tg.send_message(chat_id, text, parse_mode=None)
+
+
+async def handle_list_command(chat_id: int, user_id: int) -> None:
+    """Browse pantry in Telegram (capped) with Open/Used buttons."""
+    tg = get_telegram()
+    items = await get_supabase().list_inventory_for_user(str(user_id))
+    if not items:
+        await tg.send_message(
+            chat_id,
+            "Pantry is empty. Send a voice note to log food, litter, or meds.",
+            parse_mode=None,
+        )
+        return
+
+    # Telegram keyboard practicality: ~12 rows with Open+Used
+    cap = 12
+    ordered = _sort_pantry_browse(items)
+    shown = ordered[:cap]
+    more = len(ordered) - len(shown)
+
+    lines = [f"Your pantry ({len(ordered)} item(s)) — open lots first:"]
+    keyboard = []
+    for r in shown:
+        lines.append(f"• {_item_label(r)}")
+        row_btns = _open_used_row_buttons(r)
+        if row_btns:
+            keyboard.append(row_btns)
+
+    if more > 0:
+        dash = dashboard_public_url()
+        extra = (
+            f"\n…and {more} more. Full list: {dash}/dashboard"
+            if dash
+            else f"\n…and {more} more. Open the web dashboard for the full list."
+        )
+        lines.append(extra)
+    lines.append("\nOr /today for a short suggestion.")
+
+    text = "\n".join(lines)
+    if len(text) > 3900:
+        text = text[:3850] + "\n…"
+
+    if keyboard:
+        await tg.send_message_with_inline_keyboard(
+            chat_id, text, keyboard, parse_mode=None
+        )
+    else:
+        await tg.send_message(chat_id, text, parse_mode=None)
 
 
 async def start_item_fix(user_id: int, item_id: str) -> str:
@@ -970,7 +1230,8 @@ async def webhook(request: Request) -> Response:
                     chat_id,
                     "Pet Pantry — voice-log cat/dog food, litter, and meds.\n"
                     "After saving: Fix · Open −1 · Delete\n"
-                    "/fix · /open · /used\n"
+                    "/list · /today · /fix · /open · /used\n"
+                    "Say “开了 XX” / “opened XX” or “用了 XX” / “used XX”.\n"
                     "Share pantry (free for 2): /household · /join CODE · /notify on|off"
                     + dash_line,
                     parse_mode=None,
@@ -982,6 +1243,16 @@ async def webhook(request: Request) -> Response:
                 await handle_used_command(chat_id, user_id, text_raw)
             except Exception:
                 logger.exception("handle_used_command failed")
+        elif cmd0 == "/today":
+            try:
+                await handle_today_command(chat_id, user_id)
+            except Exception:
+                logger.exception("handle_today_command failed")
+        elif cmd0 in ("/list", "/pantry"):
+            try:
+                await handle_list_command(chat_id, user_id)
+            except Exception:
+                logger.exception("handle_list_command failed")
         elif cmd0 in ("/household", "/join", "/leave", "/notify"):
             try:
                 await handle_household_command(chat_id, user_id, text_raw)
@@ -994,9 +1265,12 @@ async def webhook(request: Request) -> Response:
                 logger.exception("handle_fix_command failed")
         else:
             try:
-                await handle_pending_brand_fix_text(chat_id, user_id, text_raw)
+                if await handle_consume_text(chat_id, user_id, text_raw):
+                    pass
+                else:
+                    await handle_pending_brand_fix_text(chat_id, user_id, text_raw)
             except Exception:
-                logger.exception("pending brand fix failed")
+                logger.exception("pending fix / consume text failed")
 
     return Response(status_code=200)
 

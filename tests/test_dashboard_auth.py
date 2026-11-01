@@ -95,7 +95,7 @@ def test_dashboard_config(dash_client: TestClient):
     assert body["restock_thresholds"]["罐头"] == 6
     assert body["restock_thresholds"]["冻干"] == 3
     assert body["restock_thresholds"]["药品"] == 1
-    assert body["open_shelf_days"]["罐头"] == 2
+    assert body["open_shelf_days"]["罐头"] == 3
 
 
 def test_auth_and_inventory(dash_client: TestClient, monkeypatch):

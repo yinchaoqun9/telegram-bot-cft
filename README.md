@@ -1,36 +1,41 @@
-# Cat Inventory Telegram Bot
+# Pet Pantry (Telegram bot)
 
-Production-ready Telegram bot backend that processes voice notes, **transcribes** (Gemini 3.5 Transcribe first, then OpenAI `gpt-transcribe`, then AssemblyAI Universal-3.5 Pro), **extracts** structured inventory (Gemini flash first, GPT fallback), **normalizes brand names** against a local JSON catalog with fuzzy matching (no web search, minimal token use), and stores rows in Supabase.
+Voice-first pantry tracker for **cat/dog food, litter, and meds** (EN + ZH). Backend: FastAPI webhook/polling → STT (**Gemini `gemini-3.5-transcribe` → OpenAI `gpt-transcribe` → AssemblyAI Universal-3.5 Pro**) → structured extract (Gemini flash → GPT) → brand normalize (local JSON + `rapidfuzz`) → Supabase.
+
+End-user docs: [`USER_MANUAL.md`](USER_MANUAL.md). This README is for developers / deploy.
 
 ## Features
 
-- **Webhook-based**: Receives Telegram updates via webhook
-- **Voice processing**: Downloads voice notes; STT chain **Gemini `gemini-3.5-transcribe` → OpenAI `gpt-transcribe` → AssemblyAI `universal-3-5-pro`**
-- **Structured extraction**: **Gemini** JSON extraction by default, falls back to **GPT**; brand strings are then matched to a **local brand map** (`rapidfuzz`)
-- **Supabase storage**: Inserts into `cat_inventory` (incl. `category`: 冻干 / 罐头 / 汤包 / 猫条 / 零食 / 猫砂 / 药品; optional `opened_at`)
-- **Brand resolution**: Fuzzy match on LLM `brand` plus **substring match of the full transcript** against the local brand list (no extra API calls); helps niche names when the model omits or mislabels the brand
-- **User confirmation**: Sends confirmation message back to the user
-- **Expiry digest**: Daily job groups items expiring in **0–7 days** and **8–15 days** (configurable window); inline **Used** buttons or `/used <item_id>` decrease quantity (row deleted at 0)
+- **Webhook or polling**: Telegram updates via webhook (`main.py`) or `run_polling.py`
+- **Voice logging**: Multi-item extract; categories 冻干 / 罐头 / 汤包 / 猫条 / 零食 / 猫砂 / 药品 (no forced wet-food default); meds → `flavor`
+- **Brand resolution**: Catalog fuzzy + transcript substring; optional Google CSE web fallback; per-user aliases from **Fix**
+- **Open / Used + `open_lots`**: Open = sealed qty −1 + open lot; Used finishes oldest open lot first, else sealed −1. Voice/text: “opened X” / “开了 X”, “used X” / “用了 X”
+- **`/list` / `/pantry`**: Browse up to 12 pantry rows in Telegram with Open/Used buttons
+- **`/today` + eat-today digest**: If nothing near expiry, daily cron suggests top 3 eatable (open lots first)
+- **Expiry digest**: 0–7 and 8–N days with inline Used buttons
+- **Household (free ≤2)**: `/household` `/join` `/leave`; digests to all; `/notify on|off` for partner change pings
+- **Web dashboard**: Telegram Login; urgency radar, restock, kitchen strip; Open/Used; ZH/EN UI; open shelf (罐头/汤包 ≈ 3 days)
 
 ## Project Structure
 
 ```
 telegram-bot/
-├── main.py                 # FastAPI app, webhook endpoint
+├── main.py                 # FastAPI app, webhook, commands, consume match
+├── run_polling.py          # Local/dev long-polling entry
 ├── dashboard_routes.py     # /dashboard + auth + inventory APIs
 ├── static/dashboard/       # Inventory UI (Telegram Login)
 ├── data/
-│   └── cat_food_brands.json # Example brand catalog (canonical + aliases)
+│   └── cat_food_brands.json
 ├── services/
-│   ├── ai_pipeline.py      # STT chain + extract with provider fallback
-│   ├── assemblyai_service.py # AssemblyAI Universal-3.5 Pro (file STT backup)
-│   ├── brand_catalog.py    # Load JSON, fuzzy-normalize brand
-│   ├── gemini_service.py   # gemini-3.5-transcribe + extract model
-│   ├── inventory_json.py   # Parse LLM JSON output (shared)
-│   ├── openai_service.py   # gpt-transcribe + GPT extract
-│   ├── supabase_service.py # Database operations
-│   └── telegram_service.py # Telegram API (download, send)
-├── send_reminders.py       # Daily cron: digest + optional inline keyboards
+│   ├── ai_pipeline.py
+│   ├── consume_intent.py   # open/used intent from transcript/text
+│   ├── inventory_match.py  # match pantry + eat-today ranking
+│   ├── open_shelf_life.py
+│   ├── household_service.py
+│   ├── product_category.py
+│   ├── brand_*.py / gemini / openai / assemblyai / supabase / telegram …
+├── send_reminders.py       # Daily cron: expiry or eat-today
+├── USER_MANUAL.md          # Non-technical user guide
 ├── requirements.txt
 ├── .env.example
 └── README.md
@@ -137,6 +142,19 @@ ALTER TABLE cat_inventory
   ADD COLUMN IF NOT EXISTS household_id UUID;
 ALTER TABLE cat_inventory
   ADD COLUMN IF NOT EXISTS last_acted_by TEXT;
+
+-- Concurrent open lots (Open = qty−1 + new lot; Used with lot = finish lot, qty unchanged)
+CREATE TABLE IF NOT EXISTS open_lots (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  inventory_id UUID NOT NULL REFERENCES cat_inventory(id) ON DELETE CASCADE,
+  user_id TEXT NOT NULL,
+  household_id UUID,
+  opened_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  finished_at TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS open_lots_inventory_active_idx
+  ON open_lots (inventory_id)
+  WHERE finished_at IS NULL;
 ```
 
 ### Training layer (Fix)
@@ -146,7 +164,9 @@ After a voice save, tap **Fix** → send one line; the bot auto-detects:
 - a **category** (`罐头` / `wet food` / `冻干` / …) → category  
 - otherwise → **brand** (and learns `wrong → correct` for that user)
 
-Or `/fix brand|quantity|category <item_id> <value>`. Category is optional (no forced wet-food default). Meds use `category=药品` and put the drug name in `flavor`. **Open −1** = stamp `opened_at` + reduce qty by 1.
+Or `/fix brand|quantity|category <item_id> <value>`. Category is optional (no forced wet-food default). Meds use `category=药品` and put the drug name in `flavor`.
+
+**Open −1** = sealed `quantity − 1` + insert an `open_lots` row (cache `opened_at` = oldest unfinished lot). **Used** with an unfinished lot = finish that lot (qty unchanged); without a lot = sealed qty −1. Say “开了 XX” / “opened XX” or “用了 XX” / “used XX”, or `/today` for daily picks.
 
 Learning is **not** fine-tuning the LLM: corrections go into `user_brand_aliases` and are applied on the next voice note *before* the global catalog / model output.
 
@@ -184,7 +204,7 @@ End users open **`/dashboard`**, sign in with **Telegram Login**, and only see r
 2. Deploy on **HTTPS** (Railway / etc.). Telegram Login does **not** work on plain `http://localhost` for real users.
 3. In [@BotFather](https://t.me/BotFather): `/setdomain` → pick your bot → enter the host only (e.g. `your-app.up.railway.app`).
 4. Optionally set `DASHBOARD_PUBLIC_URL=https://your-app.up.railway.app` so `/start` includes the link.
-5. Users: open `https://…/dashboard` → Telegram Login → inventory table → **Used −1**.
+5. Users: open `https://…/dashboard` → Telegram Login → inventory → **Open −1** / **Used** (open-lot aware).
 
 Local smoke-test: `python main.py` then open `http://127.0.0.1:8000/dashboard` (widget may be blocked until domain + HTTPS are set; API auth unit tests cover the HMAC path).
 
@@ -287,17 +307,20 @@ Saved 2 items:
 
 ### Expiry digest and marking items used
 
-Schedule [`send_reminders.py`](telegram-bot/send_reminders.py) **once per day** (Railway Cron or other scheduler) with the same `SUPABASE_*` and `TELEGRAM_BOT_TOKEN` as the bot. Each user with a `telegram_users` row receives **one message** listing:
+Schedule [`send_reminders.py`](send_reminders.py) **once per day** (Railway Cron or other scheduler) with the same `SUPABASE_*` and `TELEGRAM_BOT_TOKEN` as the bot. Each user with a `telegram_users` row receives **one message**:
 
-- **Expiring within 7 days** (`today` through `today+7`)
-- **Expiring in 8–N days** (`today+8` through `today+N`, default N=15)
+- If anything is near expiry: **within 7 days** and **8–N days** (default N=15)
+- Else: **Today’s picks** (up to 3 eatable items; open lots first) with Open / Used buttons
 
-Items already past `best_by` are not listed. Set **`TZ`** (e.g. `Asia/Shanghai`) on the job environment so `date.today()` matches your local calendar.
+Items already past `best_by` are not listed. Set **`TZ`** (e.g. `America/Los_Angeles` or `Asia/Shanghai`) on the job so `date.today()` matches testers’ calendar.
 
-- Tap **Used −1** on a line to decrease quantity by 1; at **0** the row is **deleted**.
-- Or send **`/used <item_id>`** (UUID shown under each item in the digest).
+- **Used**: finish an open lot if one exists, else sealed qty −1 (row deleted at 0 with no open lots)
+- **Open**: sealed qty −1 + new `open_lots` row
+- Or **`/used` / `/open` / `/today`** anytime
 
-The main bot webhook must stay deployed so callbacks and `/used` reach the server.
+**Before user tests:** (1) run the `open_lots` SQL above in Supabase, (2) deploy this code, (3) confirm the cron job is on, (4) optionally BotFather `/setcommands` for `start help list today open used fix household join leave notify`.
+
+The main bot webhook must stay deployed so callbacks and commands reach the server.
 
 ## API Endpoints
 

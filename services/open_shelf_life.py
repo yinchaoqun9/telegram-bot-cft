@@ -9,8 +9,8 @@ from typing import Optional
 
 # Days after opened_at before we treat the open lot as urgent/expired.
 OPEN_SHELF_DAYS = {
-    "罐头": 2,
-    "汤包": 2,
+    "罐头": 3,
+    "汤包": 3,
     "猫条": 3,
     "冻干": 30,
     "零食": 14,

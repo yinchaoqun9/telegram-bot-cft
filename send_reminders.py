@@ -2,8 +2,11 @@
 """
 Daily digest: expiring inventory grouped by window (0–7 days vs 8–15 days).
 
+When nothing is in the expiry windows, send an optional “eat today” top-3
+of eatable pantry items (open lots first).
+
 For each user in telegram_users with matching rows, sends one message with
-optional inline "Used" buttons (see REMINDER_DIGEST_MAX_BUTTONS).
+optional inline "Used"/"Open" buttons (see REMINDER_DIGEST_MAX_BUTTONS).
 
 Household members each receive the same shared-pantry digest (always on).
 Partner alerts for voice/Open/Used are separate and opt-in via /notify.
@@ -23,6 +26,7 @@ from typing import Any, Dict, List, Tuple
 
 from dotenv import load_dotenv
 
+from services.inventory_match import pick_eat_today
 from services.supabase_service import SupabaseService
 from services.telegram_service import TelegramService
 
@@ -60,8 +64,10 @@ def _format_item_line(r: Dict[str, Any]) -> str:
     best_by = r.get("best_by") or ""
     qty = int(r.get("quantity") or 0)
     iid = str(r.get("id") or "")
+    open_n = int(r.get("open_lots_count") or (1 if r.get("has_open_lot") else 0))
     cpre = f"[{cat}] " if cat else ""
-    line = f"• {cpre}{brand} {flavor} — {best_by} — qty {qty}"
+    open_bit = f" · open×{open_n}" if open_n else ""
+    line = f"• {cpre}{brand} {flavor} — {best_by} — qty {qty}{open_bit}"
     if iid:
         line += f"\n  id: {iid}"
     return line
@@ -128,6 +134,36 @@ def _items_for_buttons(
     return ordered, keyboard
 
 
+def _build_eat_today(
+    picks: List[Dict[str, Any]],
+) -> Tuple[str, List[List[Dict[str, str]]]]:
+    lines = [
+        "No near-expiry items today.",
+        "Today’s picks (open lots first) — tap Open or Used:",
+    ]
+    keyboard: List[List[Dict[str, str]]] = []
+    for r in picks:
+        lines.append(_format_item_line(r))
+        iid = str(r.get("id") or "")
+        if not iid:
+            continue
+        brand = ((r.get("brand") or "") + " " + (r.get("flavor") or "")).strip()[:18]
+        row_btns: List[Dict[str, str]] = []
+        if int(r.get("quantity") or 0) > 0:
+            cb_o = f"o:{iid}"
+            if len(cb_o.encode("utf-8")) <= 64:
+                label = f"Open {brand}".strip()[:40] or "Open"
+                row_btns.append({"text": label, "callback_data": cb_o})
+        cb_u = f"u:{iid}"
+        if len(cb_u.encode("utf-8")) <= 64:
+            label = f"Used {brand}".strip()[:40] or "Used"
+            row_btns.append({"text": label, "callback_data": cb_u})
+        if row_btns:
+            keyboard.append(row_btns)
+    lines.append("\nOr /today anytime.")
+    return "\n".join(lines), keyboard
+
+
 async def main() -> None:
     supabase_url = os.environ.get("SUPABASE_URL")
     supabase_key = os.environ.get("SUPABASE_SERVICE_KEY")
@@ -155,13 +191,21 @@ async def main() -> None:
         within_7, within_8_15 = await supa.get_digest_buckets_for_user(
             uid, today, window_days=window
         )
-        if not within_7 and not within_8_15:
-            continue
-
-        with_buttons, keyboard = _items_for_buttons(within_7, within_8_15, btn_cap)
-        text = _build_digest_text(
-            within_7, within_8_15, window, btn_cap, with_buttons
-        )
+        if within_7 or within_8_15:
+            with_buttons, keyboard = _items_for_buttons(within_7, within_8_15, btn_cap)
+            text = _build_digest_text(
+                within_7, within_8_15, window, btn_cap, with_buttons
+            )
+        else:
+            try:
+                items = await supa.list_inventory_for_user(uid)
+            except Exception as e:
+                logger.warning("list inventory for eat-today failed user=%s: %s", uid, e)
+                continue
+            picks = pick_eat_today(items, limit=3)
+            if not picks:
+                continue
+            text, keyboard = _build_eat_today(picks)
 
         try:
             if keyboard:

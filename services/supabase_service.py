@@ -7,7 +7,8 @@ Uses asyncio.to_thread for non-blocking execution (supabase-py is sync).
 
 import asyncio
 import logging
-from datetime import date, datetime, timedelta
+from collections import defaultdict
+from datetime import date, datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Tuple
 from uuid import uuid4
 
@@ -249,17 +250,119 @@ class SupabaseService:
                 ) from e2
         return self._split_digest_rows(inv.data or [], today, window_days)
 
+
+    def _list_active_open_lots_sync(self, inventory_id: str) -> List[Dict[str, Any]]:
+        try:
+            result = (
+                self.client.table("open_lots")
+                .select("id,inventory_id,user_id,household_id,opened_at,finished_at")
+                .eq("inventory_id", str(inventory_id))
+                .is_("finished_at", "null")
+                .order("opened_at", desc=False)
+                .execute()
+            )
+        except Exception as e:
+            logger.warning("list open_lots failed: %s", e)
+            return []
+        return result.data or []
+
+    def _active_open_lots_by_inventory_sync(
+        self, inventory_ids: List[str]
+    ) -> Tuple[Dict[str, List[Dict[str, Any]]], bool]:
+        """
+        Returns (map inventory_id -> active lots, table_ok).
+        table_ok=False when open_lots is missing / query failed.
+        """
+        ids = [str(i) for i in inventory_ids if i]
+        if not ids:
+            return {}, True
+        try:
+            result = (
+                self.client.table("open_lots")
+                .select("id,inventory_id,user_id,household_id,opened_at,finished_at")
+                .in_("inventory_id", ids)
+                .is_("finished_at", "null")
+                .order("opened_at", desc=False)
+                .execute()
+            )
+        except Exception as e:
+            logger.warning("batch open_lots failed: %s", e)
+            return {}, False
+        by: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
+        for lot in result.data or []:
+            by[str(lot.get("inventory_id"))].append(lot)
+        return by, True
+
+    def _enrich_open_lot_flags_sync(
+        self, rows: List[Dict[str, Any]]
+    ) -> List[Dict[str, Any]]:
+        if not rows:
+            return rows
+        by, table_ok = self._active_open_lots_by_inventory_sync(
+            [str(r.get("id")) for r in rows]
+        )
+        for r in rows:
+            iid = str(r.get("id") or "")
+            lots = by.get(iid, [])
+            if table_ok:
+                r["has_open_lot"] = bool(lots)
+                r["open_lots_count"] = len(lots)
+                if lots:
+                    r["opened_at"] = lots[0].get("opened_at") or r.get("opened_at")
+                elif not lots:
+                    # Keep row opened_at only if legacy stamp with no lots table rows
+                    pass
+            else:
+                # Legacy: opened_at on inventory row means one open lot
+                r["has_open_lot"] = bool(r.get("opened_at"))
+                r["open_lots_count"] = 1 if r.get("opened_at") else 0
+        return rows
+
+    def _sync_opened_at_cache_sync(self, inventory_id: str) -> None:
+        lots = self._list_active_open_lots_sync(inventory_id)
+        opened_at = lots[0].get("opened_at") if lots else None
+        try:
+            self.client.table("cat_inventory").update(
+                {"opened_at": opened_at}
+            ).eq("id", str(inventory_id)).execute()
+        except Exception as e:
+            logger.warning("sync opened_at cache failed: %s", e)
+
+    def _maybe_delete_empty_inventory_sync(self, inventory_id: str) -> bool:
+        """Delete inventory row if qty==0 and no active open lots. Returns True if deleted."""
+        try:
+            cur = (
+                self.client.table("cat_inventory")
+                .select("id,quantity")
+                .eq("id", str(inventory_id))
+                .limit(1)
+                .execute()
+            )
+        except Exception:
+            return False
+        row = (cur.data or [None])[0]
+        if not row:
+            return False
+        if int(row.get("quantity") or 0) > 0:
+            return False
+        if self._list_active_open_lots_sync(inventory_id):
+            return False
+        try:
+            self.client.table("cat_inventory").delete().eq(
+                "id", str(inventory_id)
+            ).execute()
+            return True
+        except Exception as e:
+            logger.warning("delete empty inventory failed: %s", e)
+            return False
+
     def _decrement_item_quantity_sync(
         self, user_id: str, item_id: str, delta: int = 1
     ) -> str:
         """
-        Decrease quantity by delta for row owned by user_id. Delete row if qty <= 0.
-
-        Returns:
-            'deleted' or 'updated'
-
-        Raises:
-            SupabaseServiceError: If row missing or not owned by user.
+        Used semantics:
+        - If an unfinished open_lot exists: finish oldest lot, qty unchanged -> 'finished_open'
+        - Else: qty -= delta (sealed consume); delete row if empty -> 'deleted'|'updated'
         """
         if delta < 1:
             raise SupabaseServiceError("Invalid delta")
@@ -272,17 +375,40 @@ class SupabaseService:
                 .execute()
             )
         except Exception as e:
-            logger.exception("Supabase decrement fetch error: %s", e)
+            logger.exception("Supabase used fetch error: %s", e)
             raise SupabaseServiceError(f"Failed to fetch item: {e}") from e
 
         row = (current.data or [None])[0]
         if not row or not self._user_can_access_item_sync(str(user_id), row):
             raise SupabaseServiceError("Item not found")
 
+        lots = self._list_active_open_lots_sync(item_id)
+        if lots:
+            lot_id = lots[0]["id"]
+            try:
+                self.client.table("open_lots").update(
+                    {"finished_at": datetime.now(timezone.utc).isoformat()}
+                ).eq("id", lot_id).execute()
+                self.client.table("cat_inventory").update(
+                    {"last_acted_by": str(user_id)}
+                ).eq("id", item_id).execute()
+            except Exception as e:
+                logger.exception("finish open_lot failed: %s", e)
+                raise SupabaseServiceError(f"Failed to finish open lot: {e}") from e
+            self._sync_opened_at_cache_sync(item_id)
+            self._maybe_delete_empty_inventory_sync(item_id)
+            return "finished_open"
+
+        # No open lot: consume sealed stock
         qty = int(row.get("quantity") or 0)
         new_qty = max(0, qty - delta)
         try:
             if new_qty <= 0:
+                if self._list_active_open_lots_sync(item_id):
+                    self.client.table("cat_inventory").update(
+                        {"quantity": 0, "last_acted_by": str(user_id)}
+                    ).eq("id", item_id).execute()
+                    return "updated"
                 self.client.table("cat_inventory").delete().eq("id", item_id).execute()
                 return "deleted"
             self.client.table("cat_inventory").update(
@@ -290,24 +416,13 @@ class SupabaseService:
             ).eq("id", item_id).execute()
             return "updated"
         except Exception as e:
-            try:
-                if new_qty <= 0:
-                    self.client.table("cat_inventory").delete().eq(
-                        "id", item_id
-                    ).execute()
-                    return "deleted"
-                self.client.table("cat_inventory").update(
-                    {"quantity": new_qty}
-                ).eq("id", item_id).execute()
-                return "updated"
-            except Exception as e2:
-                logger.exception("Supabase decrement update error: %s", e2)
-                raise SupabaseServiceError(f"Failed to update item: {e2}") from e2
+            logger.exception("Supabase sealed used error: %s", e)
+            raise SupabaseServiceError(f"Failed to update item: {e}") from e
 
     def _open_item_sync(self, user_id: str, item_id: str, delta: int = 1) -> str:
         """
-        Mark lot as opened (set opened_at if missing) and decrement quantity.
-        Delete row if qty <= 0. Returns 'deleted' or 'updated'.
+        Open: require qty>=1, qty-=1, insert open_lots row, sync opened_at cache.
+        Returns 'opened' or 'deleted' (should not delete while opening).
         """
         if delta < 1:
             raise SupabaseServiceError("Invalid delta")
@@ -320,44 +435,62 @@ class SupabaseService:
                 .execute()
             )
         except Exception as e:
-            # Column may be missing on older DBs — fall back to decrement only
-            logger.warning("open_item select failed (%s); falling back to decrement", e)
-            return self._decrement_item_quantity_sync(user_id, item_id, delta)
+            logger.exception("open_item fetch failed: %s", e)
+            raise SupabaseServiceError(f"Failed to fetch item: {e}") from e
 
         row = (current.data or [None])[0]
         if not row or not self._user_can_access_item_sync(str(user_id), row):
             raise SupabaseServiceError("Item not found")
 
         qty = int(row.get("quantity") or 0)
-        new_qty = max(0, qty - delta)
-        from datetime import timezone
+        if qty < delta:
+            raise SupabaseServiceError("No sealed stock left to open")
 
-        patch: Dict[str, Any] = {"last_acted_by": str(user_id)}
-        if not row.get("opened_at"):
-            patch["opened_at"] = datetime.now(timezone.utc).isoformat()
+        new_qty = qty - delta
+        now = datetime.now(timezone.utc).isoformat()
+        existing_lots = self._list_active_open_lots_sync(item_id)
+        lot = {
+            "id": str(uuid4()),
+            "inventory_id": str(item_id),
+            "user_id": str(user_id),
+            "household_id": row.get("household_id"),
+            "opened_at": now,
+            "finished_at": None,
+        }
         try:
-            if new_qty <= 0:
-                self.client.table("cat_inventory").delete().eq("id", item_id).execute()
-                return "deleted"
-            patch["quantity"] = new_qty
-            self.client.table("cat_inventory").update(patch).eq("id", item_id).execute()
-            return "updated"
+            self.client.table("cat_inventory").update(
+                {
+                    "quantity": new_qty,
+                    "opened_at": (
+                        row.get("opened_at") or now if existing_lots else now
+                    ),
+                    "last_acted_by": str(user_id),
+                }
+            ).eq("id", item_id).execute()
+            self.client.table("open_lots").insert(lot).execute()
+            self._sync_opened_at_cache_sync(item_id)
+            return "opened"
         except Exception as e:
-            patch.pop("last_acted_by", None)
+            # Fallback without open_lots table: legacy opened_at + decrement
+            logger.warning("open_lots path failed (%s); legacy open", e)
+            patch = {
+                "quantity": new_qty,
+                "opened_at": row.get("opened_at") or now,
+                "last_acted_by": str(user_id),
+            }
             try:
+                self.client.table("cat_inventory").update(patch).eq(
+                    "id", item_id
+                ).execute()
                 if new_qty <= 0:
                     self.client.table("cat_inventory").delete().eq(
                         "id", item_id
                     ).execute()
                     return "deleted"
-                patch["quantity"] = new_qty
-                self.client.table("cat_inventory").update(patch).eq(
-                    "id", item_id
-                ).execute()
-                return "updated"
+                return "opened"
             except Exception as e2:
-                logger.exception("Supabase open_item update error: %s", e2)
                 raise SupabaseServiceError(f"Failed to open item: {e2}") from e2
+
     def _delete_inventory_item_sync(self, user_id: str, item_id: str) -> None:
         """Delete a row if accessible to user (owner or household member)."""
         tid = (item_id or "").strip()
@@ -378,6 +511,12 @@ class SupabaseService:
         if not row or not self._user_can_access_item_sync(str(user_id), row):
             raise SupabaseServiceError("Item not found")
         try:
+            try:
+                self.client.table("open_lots").delete().eq(
+                    "inventory_id", tid
+                ).execute()
+            except Exception as e:
+                logger.warning("delete open_lots for item failed: %s", e)
             self.client.table("cat_inventory").delete().eq("id", tid).execute()
         except Exception as e:
             logger.exception("Supabase delete error: %s", e)
@@ -483,8 +622,7 @@ class SupabaseService:
                 q = q.eq("household_id", household_id)
             else:
                 q = q.eq("user_id", str(user_id))
-            if not include_zero:
-                q = q.gt("quantity", 0)
+            # Fetch all rows then filter so qty=0 with active open_lots stay visible
             result = q.execute()
         except Exception as e:
             logger.warning("list inventory household/opened failed (%s); retrying", e)
@@ -498,13 +636,18 @@ class SupabaseService:
                     .order("best_by", desc=False)
                     .limit(1000)
                 )
-                if not include_zero:
-                    q = q.gt("quantity", 0)
                 result = q.execute()
             except Exception as e2:
                 logger.exception("Supabase list inventory error: %s", e2)
                 raise SupabaseServiceError(f"Failed to list inventory: {e2}") from e2
-        return result.data or []
+        rows = self._enrich_open_lot_flags_sync(result.data or [])
+        if not include_zero:
+            rows = [
+                r
+                for r in rows
+                if int(r.get("quantity") or 0) > 0 or r.get("has_open_lot")
+            ]
+        return rows
 
     async def list_inventory_for_user(
         self, user_id: str, *, include_zero: bool = False
@@ -546,7 +689,8 @@ class SupabaseService:
         row = rows[0]
         if not self._user_can_access_item_sync(str(user_id), row):
             return None
-        return row
+        enriched = self._enrich_open_lot_flags_sync([row])
+        return enriched[0] if enriched else row
 
     def _update_inventory_fields_sync(
         self, user_id: str, item_id: str, fields: Dict[str, Any]

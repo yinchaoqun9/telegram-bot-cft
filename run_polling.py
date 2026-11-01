@@ -129,13 +129,22 @@ async def main() -> None:
                         chat_id,
                         "Pet Pantry — voice-log cat/dog food, litter, and meds.\n"
                         "After saving: Fix · Open −1 · Delete\n"
-                        "/fix · /open · /used\n"
+                        "/list · /today · /fix · /open · /used\n"
+                        "Say “开了 XX” / “opened XX” or “用了 XX” / “used XX”.\n"
                         "Share pantry (free for 2): /household · /join CODE · /notify on|off"
                         + dash_line,
                         parse_mode=None,
                     )
                 elif cmd0 in ("/used", "/open"):
                     await handle_used_command(chat_id, user_id, text_raw)
+                elif cmd0 == "/today":
+                    from main import handle_today_command
+
+                    await handle_today_command(chat_id, user_id)
+                elif cmd0 in ("/list", "/pantry"):
+                    from main import handle_list_command
+
+                    await handle_list_command(chat_id, user_id)
                 elif cmd0 in ("/household", "/join", "/leave", "/notify"):
                     from main import handle_household_command
 
@@ -143,7 +152,10 @@ async def main() -> None:
                 elif cmd0 == "/fix":
                     await handle_fix_command(chat_id, user_id, text_raw)
                 else:
-                    await handle_pending_brand_fix_text(chat_id, user_id, text_raw)
+                    from main import handle_consume_text
+
+                    if not await handle_consume_text(chat_id, user_id, text_raw):
+                        await handle_pending_brand_fix_text(chat_id, user_id, text_raw)
 
 
 if __name__ == "__main__":

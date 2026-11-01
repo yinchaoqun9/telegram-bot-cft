@@ -397,7 +397,7 @@
       "猫砂": 1, "药品": 1, "其他": 2,
     };
     const DEFAULT_OPEN_SHELF = {
-      "罐头": 2, "汤包": 2, "猫条": 3, "冻干": 30, "零食": 14,
+      "罐头": 3, "汤包": 3, "猫条": 3, "冻干": 30, "零食": 14,
       "猫砂": 60, "药品": 90, "其他": 7,
     };
 
@@ -426,7 +426,7 @@
         kpiSku: "SKU",
         lowTag: "偏低",
         radarTitle: "临期 / 开封雷达",
-        radarSub: "这周先处理这些。点「开封 −1」会记录开封时间并减库存。",
+        radarSub: "这周先处理这些。「开封 −1」= 密封库存 −1 并新增开封份；「用完」优先核销开封份。",
         colOverdue: "已过期",
         colSoon: "≤7 天 · 这周先吃",
         colLater: "8–15 天",
@@ -508,7 +508,7 @@
         kpiSku: "SKUs",
         lowTag: "low",
         radarTitle: "Expiry / opened radar",
-        radarSub: "Handle these first. Open −1 stamps opened time and reduces qty.",
+        radarSub: "Handle these first. Open −1 = sealed −1 + new open lot; Used finishes an open lot first.",
         colOverdue: "Overdue",
         colSoon: "≤7 days · use this week",
         colLater: "8–15 days",
@@ -656,6 +656,7 @@
     }
 
     function daysAfterOpenLeft(item) {
+      if (!item.opened_at && !item.has_open_lot) return null;
       if (!item.opened_at) return null;
       const opened = new Date(item.opened_at);
       if (Number.isNaN(opened.getTime())) return null;
@@ -1098,11 +1099,13 @@
         if (openLeft != null) {
           openBadge = `<div><span class="badge ${openLeft <= 0 ? "danger" : "warn"}">${escapeHtml(i.openDaysLeft(openLeft))}</span></div>`;
         }
+        const openN = Number(it.open_lots_count || (it.has_open_lot ? 1 : 0));
+        const openQtyBit = openN > 0 ? ` <span class="muted">· open×${openN}</span>` : "";
         return `<tr class="${rowClass}">
           <td><strong>${escapeHtml(itemTitle(it))}</strong><div class="muted">${escapeHtml(itemSubtitle(it))}</div></td>
           <td>${escapeHtml(catLabel(catKey(it)))}</td>
           <td>${escapeHtml(it.best_by || "—")}<div>${badge}</div>${openBadge}</td>
-          <td>×${escapeHtml(qtyOf(it))}</td>
+          <td>×${escapeHtml(qtyOf(it))}${openQtyBit}</td>
           <td>
             <button type="button" data-open="${escapeHtml(it.id)}">${escapeHtml(i.openBtn)}</button>
             <button type="button" data-used="${escapeHtml(it.id)}">${escapeHtml(i.usedBtn)}</button>

@@ -105,8 +105,8 @@ async def dashboard_config() -> Dict[str, Any]:
             "其他": int(os.environ.get("RESTOCK_THRESHOLD_OTHER", "2")),
         },
         "open_shelf_days": {
-            "罐头": 2,
-            "汤包": 2,
+            "罐头": 3,
+            "汤包": 3,
             "猫条": 3,
             "冻干": 30,
             "零食": 14,
