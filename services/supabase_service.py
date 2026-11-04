@@ -138,6 +138,7 @@ class SupabaseService:
         Upsert Telegram user -> chat mapping.
 
         This enables proactive reminders in 1:1 chats.
+        Does not overwrite lang preference.
         """
         row = {"user_id": str(user_id), "chat_id": int(chat_id)}
         try:
@@ -147,16 +148,80 @@ class SupabaseService:
             logger.exception("Supabase upsert telegram_users error: %s", e)
             raise SupabaseServiceError(f"Failed to upsert telegram user: {e}") from e
 
+    def _get_telegram_user_sync(self, user_id: str) -> Optional[Dict[str, Any]]:
+        try:
+            result = (
+                self.client.table("telegram_users")
+                .select("user_id,chat_id,lang")
+                .eq("user_id", str(user_id))
+                .limit(1)
+                .execute()
+            )
+        except Exception as e:
+            # Column lang may be missing before migration
+            logger.warning("get telegram_user with lang failed (%s); retry", e)
+            try:
+                result = (
+                    self.client.table("telegram_users")
+                    .select("user_id,chat_id")
+                    .eq("user_id", str(user_id))
+                    .limit(1)
+                    .execute()
+                )
+            except Exception as e2:
+                logger.warning("get telegram_user failed: %s", e2)
+                return None
+        rows = result.data or []
+        return rows[0] if rows else None
+
+    def _get_user_lang_sync(self, user_id: str) -> str:
+        from services.bot_i18n import DEFAULT_LANG, lang_from_user_row
+
+        row = self._get_telegram_user_sync(str(user_id))
+        if not row:
+            return DEFAULT_LANG
+        return lang_from_user_row(row)
+
+    def _set_user_lang_sync(self, user_id: str, lang: str) -> str:
+        from services.bot_i18n import normalize_lang
+
+        code = normalize_lang(lang)
+        try:
+            existing = self._get_telegram_user_sync(str(user_id))
+            if not existing or existing.get("chat_id") is None:
+                raise SupabaseServiceError(
+                    "Talk to the bot once first, then set language."
+                )
+            self.client.table("telegram_users").update(
+                {"lang": code}
+            ).eq("user_id", str(user_id)).execute()
+        except SupabaseServiceError:
+            raise
+        except Exception as e:
+            logger.exception("set user lang failed: %s", e)
+            raise SupabaseServiceError(f"Failed to save language: {e}") from e
+        return code
+
     def _list_telegram_users_sync(self) -> List[Dict[str, Any]]:
         try:
             result = (
                 self.client.table("telegram_users")
-                .select("user_id,chat_id")
+                .select("user_id,chat_id,lang")
                 .execute()
             )
         except Exception as e:
-            logger.exception("Supabase list telegram_users error: %s", e)
-            raise SupabaseServiceError(f"Failed to list telegram users: {e}") from e
+            logger.warning("list telegram_users with lang failed (%s); retry", e)
+            try:
+                result = (
+                    self.client.table("telegram_users")
+                    .select("user_id,chat_id")
+                    .execute()
+                )
+            except Exception as e2:
+                logger.exception("Supabase list telegram_users error: %s", e2)
+                raise SupabaseServiceError(
+                    f"Failed to list telegram users: {e2}"
+                ) from e2
         return result.data or []
 
     def _membership_for_user_sync(self, user_id: str) -> Optional[Dict[str, Any]]:
@@ -584,6 +649,12 @@ class SupabaseService:
     async def upsert_telegram_user(self, user_id: str, chat_id: int) -> None:
         """Async wrapper for upserting telegram_users mapping."""
         await asyncio.to_thread(self._upsert_telegram_user_sync, user_id, chat_id)
+
+    async def get_user_lang(self, user_id: str) -> str:
+        return await asyncio.to_thread(self._get_user_lang_sync, user_id)
+
+    async def set_user_lang(self, user_id: str, lang: str) -> str:
+        return await asyncio.to_thread(self._set_user_lang_sync, user_id, lang)
 
     async def list_telegram_users(self) -> List[Dict[str, Any]]:
         return await asyncio.to_thread(self._list_telegram_users_sync)

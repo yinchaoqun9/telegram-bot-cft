@@ -6,7 +6,8 @@
 - **Add new items** → send a **voice note** (this is the main way to log stock).
 - **Open / used, fixes, commands** → voice **or** plain text both work.
 
-**Languages:** Chinese and English both work for voice and text. You can mix them in one message.
+**Languages:** Voice and text work in Chinese or English (you can mix them).  
+Bot replies default to **English**. Switch anytime with `/language` (per person — partners can pick differently).
 
 ---
 
@@ -243,6 +244,7 @@ Type these in the bot chat (same commands on phone or desktop):
 | Command | Purpose |
 |---------|---------|
 | `/start` or `/help` | How to use (+ dashboard link when the host has set one) |
+| `/language` | Switch English / 中文 (saved for you only) |
 | `/list` or `/pantry` | Show pantry (up to 12) with Open/Used buttons |
 | `/today` | Suggest up to 3 things to use today |
 | `/open <id>` | Mark opened |

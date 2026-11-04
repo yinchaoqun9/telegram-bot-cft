@@ -72,48 +72,29 @@ def dashboard_page_url() -> str:
     return f"{base}/dashboard" if base else ""
 
 
-def build_welcome_message(*, is_start: bool = True) -> str:
-    """Friendly /start and /help copy (ZH + EN, scannable)."""
-    hello = (
-        "嗨，我是 Pet Pantry 🐾\n"
-        "帮你用语音记猫狗粮、猫砂和药——中英文都行，随便说。"
-        if is_start
-        else "Pet Pantry 使用小抄 🐾\n中英文语音 / 文字都行。"
+async def build_welcome_message_for_user(
+    user_id: int | str, *, is_start: bool = True
+) -> str:
+    """Localized /start and /help (default English; per-user lang)."""
+    from services.bot_i18n import welcome_message
+
+    try:
+        lang = await get_supabase().get_user_lang(str(user_id))
+        if not isinstance(lang, str):
+            lang = "en"
+    except Exception:
+        lang = "en"
+    return welcome_message(
+        lang, is_start=is_start, dashboard_url=dashboard_page_url()
     )
-    dash = dashboard_page_url()
-    dash_block = (
-        f"\n\n🌐 网页看板\n{dash}\n"
-        "用 Telegram 登录后，只看你自己的柜子。"
-        if dash
-        else "\n\n🌐 网页看板\n问管理员要 /dashboard 链接（需先配置好）。"
-    )
-    return (
-        f"{hello}\n"
-        "\n"
-        "───\n"
-        "🎤 怎么记库存\n"
-        "直接发一条语音，例如：\n"
-        "· 「丸味冻干还剩三袋」\n"
-        "· “Two cans of Fancy Feast chicken, best by June 2026”\n"
-        "也可以一次说好几样。保存后可点 Fix / Open / Delete。\n"
-        "\n"
-        "📦 每天怎么用\n"
-        "/list — 看看柜子里有什么\n"
-        "/today — 今天建议吃 / 用哪几样\n"
-        "开封：说「开了 XX」或 opened XX\n"
-        "用完：说「用了 XX」或 used XX\n"
-        "（对不上时会给你按钮选）\n"
-        "\n"
-        "✏️ 改错了\n"
-        "点 Fix，或 /fix\n"
-        "\n"
-        "👫 和家人共用（免费 2 人）\n"
-        "/household — 创建 / 看邀请码\n"
-        "/join 邀请码 — 加入对方柜子\n"
-        "/notify on — 对方改动时提醒你（可关）\n"
-        f"{dash_block}\n"
-        "\n"
-        "再发 /help 随时回来看这张小抄 ✨"
+
+
+# Back-compat for imports / quick preview
+def build_welcome_message(*, is_start: bool = True, lang: str = "en") -> str:
+    from services.bot_i18n import welcome_message
+
+    return welcome_message(
+        lang, is_start=is_start, dashboard_url=dashboard_page_url()
     )
 
 
@@ -919,8 +900,63 @@ async def handle_pending_brand_fix_text(
     return await handle_pending_fix_text(chat_id, user_id, text)
 
 
+async def apply_user_language(chat_id: int, user_id: int, lang: str) -> None:
+    from services.bot_i18n import language_set_confirm, normalize_lang
+
+    tg = get_telegram()
+    code = normalize_lang(lang)
+    try:
+        await get_supabase().upsert_telegram_user(
+            user_id=str(user_id), chat_id=int(chat_id)
+        )
+        saved = await get_supabase().set_user_lang(str(user_id), code)
+    except SupabaseServiceError as e:
+        await tg.send_message(
+            chat_id,
+            f"Could not save language: {e}\n"
+            "Run the telegram_users.lang SQL in README if missing.",
+            parse_mode=None,
+        )
+        return
+    await tg.send_message(
+        chat_id, language_set_confirm(saved), parse_mode=None
+    )
+
+
+async def handle_language_command(chat_id: int, user_id: int, text: str) -> None:
+    """
+    /language | /lang
+    /language en | zh
+    """
+    from services.bot_i18n import language_prompt, normalize_lang
+
+    tg = get_telegram()
+    parts = (text or "").strip().split()
+    arg = parts[1].lower() if len(parts) > 1 else ""
+    if arg in ("en", "english", "eng"):
+        await apply_user_language(chat_id, user_id, "en")
+        return
+    if arg in ("zh", "cn", "chinese", "中文"):
+        await apply_user_language(chat_id, user_id, "zh")
+        return
+
+    try:
+        lang = await get_supabase().get_user_lang(str(user_id))
+    except Exception:
+        lang = "en"
+    keyboard = [
+        [
+            {"text": "English", "callback_data": "lang:en"},
+            {"text": "中文", "callback_data": "lang:zh"},
+        ]
+    ]
+    await tg.send_message_with_inline_keyboard(
+        chat_id, language_prompt(lang), keyboard, parse_mode=None
+    )
+
+
 async def handle_callback_query(callback: dict) -> None:
-    """Inline: d: delete; u:/o: open−1; f: start brand fix."""
+    """Inline: d: delete; u:/o: open−1; f: start brand fix; lang: locale."""
     cq_id = callback.get("id")
     from_user = callback.get("from") or {}
     user_id = from_user.get("id")
@@ -928,6 +964,17 @@ async def handle_callback_query(callback: dict) -> None:
     if not cq_id or not user_id:
         return
     tg = get_telegram()
+    if data.startswith("lang:"):
+        code = data.split(":", 1)[1].strip()
+        chat = (callback.get("message") or {}).get("chat") or {}
+        chat_id = chat.get("id")
+        try:
+            await tg.answer_callback_query(cq_id, text="OK", show_alert=False)
+        except Exception:
+            logger.exception("answerCallbackQuery failed after lang")
+        if chat_id:
+            await apply_user_language(int(chat_id), int(user_id), code)
+        return
     if data.startswith("d:"):
         item_id = data[2:].strip()
         ok, detail = await try_delete_saved_row(int(user_id), item_id)
@@ -1281,11 +1328,18 @@ async def webhook(request: Request) -> Response:
             try:
                 await tg.send_message(
                     chat_id,
-                    build_welcome_message(is_start=(cmd0 == "/start")),
+                    await build_welcome_message_for_user(
+                        user_id, is_start=(cmd0 == "/start")
+                    ),
                     parse_mode=None,
                 )
             except Exception as e:
                 logger.exception("Failed to send help message: %s", e)
+        elif cmd0 in ("/language", "/lang"):
+            try:
+                await handle_language_command(chat_id, user_id, text_raw)
+            except Exception:
+                logger.exception("handle_language_command failed")
         elif cmd0 in ("/used", "/open"):
             try:
                 await handle_used_command(chat_id, user_id, text_raw)

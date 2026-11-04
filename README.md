@@ -86,8 +86,13 @@ ALTER TABLE cat_inventory
 CREATE TABLE IF NOT EXISTS telegram_users (
   user_id TEXT PRIMARY KEY,
   chat_id BIGINT NOT NULL,
+  lang TEXT NOT NULL DEFAULT 'en',
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+-- Existing projects: per-user UI language (en default; independent of household)
+ALTER TABLE telegram_users
+  ADD COLUMN IF NOT EXISTS lang TEXT NOT NULL DEFAULT 'en';
 
 -- Optional: RLS policies (adjust as needed)
 ALTER TABLE cat_inventory ENABLE ROW LEVEL SECURITY;
@@ -318,7 +323,7 @@ Items already past `best_by` are not listed. Set **`TZ`** (e.g. `America/Los_Ang
 - **Open**: sealed qty −1 + new `open_lots` row
 - Or **`/used` / `/open` / `/today`** anytime
 
-**Before user tests:** (1) run the `open_lots` SQL above in Supabase, (2) deploy this code, (3) confirm the cron job is on, (4) optionally BotFather `/setcommands` for `start help list today open used fix household join leave notify`.
+**Before user tests:** (1) run the `open_lots` + `telegram_users.lang` SQL above in Supabase, (2) deploy this code, (3) confirm the cron job is on, (4) optionally BotFather `/setcommands` for `start help language list today open used fix household join leave notify`.
 
 The main bot webhook must stay deployed so callbacks and commands reach the server.
 

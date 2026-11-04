@@ -117,13 +117,19 @@ async def main() -> None:
                     text_lower.split(maxsplit=1)[0].split("@")[0] if text_lower else ""
                 )
                 if cmd0 in ("/start", "/help"):
-                    from main import build_welcome_message
+                    from main import build_welcome_message_for_user
 
                     await tg.send_message(
                         chat_id,
-                        build_welcome_message(is_start=(cmd0 == "/start")),
+                        await build_welcome_message_for_user(
+                            user_id, is_start=(cmd0 == "/start")
+                        ),
                         parse_mode=None,
                     )
+                elif cmd0 in ("/language", "/lang"):
+                    from main import handle_language_command
+
+                    await handle_language_command(chat_id, user_id, text_raw)
                 elif cmd0 in ("/used", "/open"):
                     await handle_used_command(chat_id, user_id, text_raw)
                 elif cmd0 == "/today":

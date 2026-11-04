@@ -60,6 +60,7 @@ def test_webhook_start_command(client: TestClient):
     tg.send_message = AsyncMock()
     sb = AsyncMock()
     sb.upsert_telegram_user = AsyncMock()
+    sb.get_user_lang = AsyncMock(return_value="en")
 
     with (
         patch.object(main_mod, "get_telegram", return_value=tg),
@@ -79,6 +80,9 @@ def test_webhook_start_command(client: TestClient):
     assert r.status_code == 200
     tg.send_message.assert_awaited()
     sb.upsert_telegram_user.assert_awaited()
+    body = tg.send_message.await_args.args[1]
+    assert "Pet Pantry" in body
+    assert "Hi," in body or "cheat sheet" in body
 
 
 def test_webhook_queues_voice(client: TestClient):
