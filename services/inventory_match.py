@@ -19,6 +19,9 @@ def item_category_canonical(item: Dict[str, Any]) -> str:
     """Map stored category (incl. English sample labels) to canonical ZH."""
     from services.product_category import normalize_category
 
+    keyed = (item.get("category_key") or "").strip()
+    if keyed:
+        return keyed
     return normalize_category(item.get("category") or "")
 
 

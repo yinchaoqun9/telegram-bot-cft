@@ -60,7 +60,16 @@ _pending_fix: dict = {}
 
 def dashboard_public_url() -> str:
     """Optional public base URL for the inventory dashboard (shown in /start)."""
-    return (os.environ.get("DASHBOARD_PUBLIC_URL") or "").strip().rstrip("/")
+    raw = (os.environ.get("DASHBOARD_PUBLIC_URL") or "").strip().rstrip("/")
+    # Avoid .../dashboard/dashboard if env already includes the path
+    if raw.lower().endswith("/dashboard"):
+        raw = raw[: -len("/dashboard")].rstrip("/")
+    return raw
+
+
+def dashboard_page_url() -> str:
+    base = dashboard_public_url()
+    return f"{base}/dashboard" if base else ""
 
 
 def get_openai() -> OpenAIService:
@@ -700,9 +709,9 @@ async def handle_list_command(chat_id: int, user_id: int) -> None:
             keyboard.append(row_btns)
 
     if more > 0:
-        dash = dashboard_public_url()
+        dash = dashboard_page_url()
         extra = (
-            f"\n…and {more} more. Full list: {dash}/dashboard"
+            f"\n…and {more} more. Full list: {dash}"
             if dash
             else f"\n…and {more} more. Open the web dashboard for the full list."
         )
@@ -1225,9 +1234,9 @@ async def webhook(request: Request) -> Response:
         tg = get_telegram()
         if cmd0 in ("/start", "/help"):
             try:
-                dash = dashboard_public_url()
+                dash = dashboard_page_url()
                 dash_line = (
-                    f"\n\nWeb dashboard (your inventory only):\n{dash}/dashboard"
+                    f"\n\nWeb dashboard (your inventory only):\n{dash}"
                     if dash
                     else "\n\nWeb dashboard: ask the admin for the /dashboard link after Telegram Login is set up."
                 )
@@ -1270,11 +1279,11 @@ async def webhook(request: Request) -> Response:
                 logger.exception("handle_fix_command failed")
         elif cmd0 in ("/dashboard", "dashboard"):
             try:
-                dash = dashboard_public_url()
+                dash = dashboard_page_url()
                 if dash:
                     await tg.send_message(
                         chat_id,
-                        f"Open the web dashboard:\n{dash}/dashboard",
+                        f"Open the web dashboard:\n{dash}",
                         parse_mode=None,
                     )
                 else:

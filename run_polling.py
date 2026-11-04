@@ -117,11 +117,11 @@ async def main() -> None:
                     text_lower.split(maxsplit=1)[0].split("@")[0] if text_lower else ""
                 )
                 if cmd0 in ("/start", "/help"):
-                    from main import dashboard_public_url
+                    from main import dashboard_page_url
 
-                    dash = dashboard_public_url()
+                    dash = dashboard_page_url()
                     dash_line = (
-                        f"\n\nWeb dashboard:\n{dash}/dashboard"
+                        f"\n\nWeb dashboard:\n{dash}"
                         if dash
                         else "\n\nWeb dashboard: /dashboard on your bot host (Telegram Login)."
                     )
@@ -152,12 +152,12 @@ async def main() -> None:
                 elif cmd0 == "/fix":
                     await handle_fix_command(chat_id, user_id, text_raw)
                 elif cmd0 in ("/dashboard", "dashboard"):
-                    from main import dashboard_public_url
+                    from main import dashboard_page_url
 
-                    dash = dashboard_public_url()
+                    dash = dashboard_page_url()
                     await tg.send_message(
                         chat_id,
-                        f"Open the web dashboard:\n{dash}/dashboard"
+                        f"Open the web dashboard:\n{dash}"
                         if dash
                         else "Dashboard URL is not configured yet.",
                         parse_mode=None,

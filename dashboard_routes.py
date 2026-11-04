@@ -68,9 +68,7 @@ def require_user(request: Request) -> str:
         raise HTTPException(status_code=401, detail=str(e)) from e
 
 
-@router.get("/dashboard")
-async def dashboard_page() -> HTMLResponse:
-    """Read HTML as UTF-8 text — avoid FileResponse + HTMLResponse mismatch mojibake."""
+def _dashboard_html() -> HTMLResponse:
     index = STATIC_DIR / "index.html"
     if not index.is_file():
         raise HTTPException(status_code=500, detail="Dashboard UI missing")
@@ -79,6 +77,15 @@ async def dashboard_page() -> HTMLResponse:
         content=html,
         media_type="text/html; charset=utf-8",
     )
+
+
+@router.get("/dashboard")
+@router.get("/dashboard/")
+@router.get("/Dashboard")
+@router.get("/DASHBOARD")
+async def dashboard_page() -> HTMLResponse:
+    """Read HTML as UTF-8 text — avoid FileResponse + HTMLResponse mismatch mojibake."""
+    return _dashboard_html()
 
 
 @router.get("/api/dashboard/config")
@@ -97,6 +104,7 @@ async def dashboard_config() -> Dict[str, Any]:
         "restock_thresholds": {
             "罐头": int(os.environ.get("RESTOCK_THRESHOLD_CAN", "6")),
             "冻干": int(os.environ.get("RESTOCK_THRESHOLD_FREEZE", "3")),
+            "干粮": int(os.environ.get("RESTOCK_THRESHOLD_DRY", "3")),
             "汤包": int(os.environ.get("RESTOCK_THRESHOLD_SOUP", "2")),
             "猫条": int(os.environ.get("RESTOCK_THRESHOLD_STICK", "2")),
             "零食": int(os.environ.get("RESTOCK_THRESHOLD_TREAT", "2")),
@@ -109,6 +117,7 @@ async def dashboard_config() -> Dict[str, Any]:
             "汤包": 3,
             "猫条": 3,
             "冻干": 30,
+            "干粮": 60,
             "零食": 14,
             "猫砂": 60,
             "药品": 90,

@@ -298,6 +298,8 @@ class SupabaseService:
     ) -> List[Dict[str, Any]]:
         if not rows:
             return rows
+        from services.product_category import normalize_category
+
         by, table_ok = self._active_open_lots_by_inventory_sync(
             [str(r.get("id")) for r in rows]
         )
@@ -316,6 +318,10 @@ class SupabaseService:
                 # Legacy: opened_at on inventory row means one open lot
                 r["has_open_lot"] = bool(r.get("opened_at"))
                 r["open_lots_count"] = 1 if r.get("opened_at") else 0
+            # Bilingual: expose canonical category key (wet food → 罐头, dry food → 干粮)
+            raw_cat = r.get("category") or ""
+            key = normalize_category(raw_cat)
+            r["category_key"] = key or (raw_cat.strip() if raw_cat else "")
         return rows
 
     def _sync_opened_at_cache_sync(self, inventory_id: str) -> None:

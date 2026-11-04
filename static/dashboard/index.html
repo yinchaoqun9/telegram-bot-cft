@@ -381,9 +381,10 @@
   </div>
 
   <script>
-    const CAT_KEYS = ["冻干", "罐头", "汤包", "猫条", "零食", "猫砂", "药品", "其他"];
+    const CAT_KEYS = ["冻干", "干粮", "罐头", "汤包", "猫条", "零食", "猫砂", "药品", "其他"];
     const MIX_COLORS = {
       "冻干": "#0f6b5c",
+      "干粮": "#2f6b3a",
       "罐头": "#9a4a1a",
       "汤包": "#3d6ea5",
       "猫条": "#6b4c9a",
@@ -393,12 +394,22 @@
       "其他": "#6b645a",
     };
     const DEFAULT_THRESHOLDS = {
-      "罐头": 6, "冻干": 3, "汤包": 2, "猫条": 2, "零食": 2,
+      "罐头": 6, "冻干": 3, "干粮": 3, "汤包": 2, "猫条": 2, "零食": 2,
       "猫砂": 1, "药品": 1, "其他": 2,
     };
     const DEFAULT_OPEN_SHELF = {
-      "罐头": 3, "汤包": 3, "猫条": 3, "冻干": 30, "零食": 14,
+      "罐头": 3, "汤包": 3, "猫条": 3, "冻干": 30, "干粮": 60, "零食": 14,
       "猫砂": 60, "药品": 90, "其他": 7,
+    };
+    // English / alias → canonical (keep in sync with product_category.py)
+    const CAT_ALIASES = {
+      "freeze-dried": "冻干", "freeze dried": "冻干", "freezedried": "冻干",
+      "wet food": "罐头", "wetfood": "罐头", "wet": "罐头", "canned": "罐头",
+      "canned food": "罐头", "干粮": "干粮", "dry food": "干粮", "dryfood": "干粮",
+      "kibble": "干粮", "dog food": "干粮", "cat food": "干粮",
+      "treat": "零食", "treats": "零食", "litter": "猫砂", "cat litter": "猫砂",
+      "medication": "药品", "medicine": "药品", "meds": "药品", "med": "药品",
+      "soup pouch": "汤包", "broth pouch": "汤包", "cat stick": "猫条",
     };
 
     const I18N = {
@@ -412,8 +423,8 @@
         kitchenEmpty: "还没有库存。去 Telegram 发一条语音开始记。",
         wetOk: "湿粮还够",
         wetLow: "湿粮偏少",
-        dryOk: "冻干还行",
-        dryLow: "冻干偏少",
+        dryOk: "干粮/冻干还行",
+        dryLow: "干粮/冻干偏少",
         medOk: "药品还行",
         medLow: "药品偏少",
         soonN: (n) => `${n} 样一周内到期`,
@@ -462,6 +473,7 @@
         filterAll: "全部",
         cats: {
           "冻干": "冻干",
+          "干粮": "干粮",
           "罐头": "罐头",
           "汤包": "汤包",
           "猫条": "猫条",
@@ -494,8 +506,8 @@
         kitchenEmpty: "No stock yet. Send a voice note to the Telegram bot to start.",
         wetOk: "Wet food looks fine",
         wetLow: "Wet food is low",
-        dryOk: "Freeze-dried looks fine",
-        dryLow: "Freeze-dried is low",
+        dryOk: "Dry / freeze-dried looks fine",
+        dryLow: "Dry / freeze-dried is low",
         medOk: "Meds look fine",
         medLow: "Meds are low",
         soonN: (n) => `${n} item(s) due within a week`,
@@ -544,6 +556,7 @@
         filterAll: "All",
         cats: {
           "冻干": "Freeze-dried",
+          "干粮": "Dry food",
           "罐头": "Cans / wet",
           "汤包": "Soup pouches",
           "猫条": "Cat sticks",
@@ -618,8 +631,12 @@
     }
 
     function catKey(item) {
+      const keyed = (item.category_key || "").trim();
+      if (keyed && CAT_KEYS.slice(0, -1).includes(keyed)) return keyed;
       const c = (item.category || "").trim();
       if (CAT_KEYS.slice(0, -1).includes(c)) return c;
+      const mapped = CAT_ALIASES[c.toLowerCase()];
+      if (mapped) return mapped;
       return "其他";
     }
 
@@ -1028,7 +1045,12 @@
         summary = i.kitchenEmpty;
       } else {
         const wetOk = (totals["罐头"] || 0) >= (state.thresholds["罐头"] || 6);
-        const dryLow = (totals["冻干"] || 0) < (state.thresholds["冻干"] || 3);
+        const dryQty = (totals["冻干"] || 0) + (totals["干粮"] || 0);
+        const dryTh = Math.max(
+          Number(state.thresholds["冻干"] || 3),
+          Number(state.thresholds["干粮"] || 3)
+        );
+        const dryLow = dryQty < dryTh;
         const medLow = (totals["药品"] || 0) < (state.thresholds["药品"] || 1);
         const bits = [];
         bits.push(wetOk ? i.wetOk : i.wetLow);

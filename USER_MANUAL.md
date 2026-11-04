@@ -68,8 +68,10 @@ If the mic is missing: in phone settings, allow Telegram access to the **microph
 
 ### Step E — Optional: web dashboard
 
-1. In the bot chat, send `/help` (or `/start`).
-2. Tap the **dashboard** link in the reply (if shown).
+1. In the bot chat, send `/dashboard` (or `/help` and tap the link).
+2. Open this exact page (lowercase path):  
+   `https://telegram-bot-cft-production.up.railway.app/dashboard`  
+   (`/Dashboard` with a capital D will show Not Found.)
 3. In the browser, click **Log in with Telegram** and approve.
 
 You’ll see the same pantry as in the bot. Inventory is tied to your Telegram account.
