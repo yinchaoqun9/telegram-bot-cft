@@ -8,11 +8,22 @@ from datetime import date
 from typing import Any, Dict, List, Optional, Tuple
 
 
-EATABLE = {"冻干", "罐头", "汤包", "猫条", "零食"}
+EATABLE = {"冻干", "罐头", "汤包", "猫条", "零食", "干粮"}
 
 
 def _norm(s: Any) -> str:
     return str(s or "").strip().lower()
+
+
+def item_category_canonical(item: Dict[str, Any]) -> str:
+    """Map stored category (incl. English sample labels) to canonical ZH."""
+    from services.product_category import normalize_category
+
+    return normalize_category(item.get("category") or "")
+
+
+def is_eatable_item(item: Dict[str, Any]) -> bool:
+    return item_category_canonical(item) in EATABLE
 
 
 def score_item(query: str, item: Dict[str, Any]) -> int:
@@ -69,7 +80,7 @@ def _eligible_for_action(
         return False
     if qty <= 0 and not has_open:
         return False
-    if eatable_only and (it.get("category") or "").strip() not in EATABLE:
+    if eatable_only and not is_eatable_item(it):
         return False
     return True
 
@@ -188,8 +199,7 @@ def pick_eat_today(
     today = today or date.today()
     pool = []
     for it in items:
-        cat = (it.get("category") or "").strip()
-        if cat not in EATABLE:
+        if not is_eatable_item(it):
             continue
         qty = int(it.get("quantity") or 0)
         if qty <= 0 and not it.get("has_open_lot"):

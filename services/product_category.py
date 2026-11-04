@@ -67,6 +67,19 @@ _CATEGORY_ALIASES: List[Tuple[str, List[str]]] = [
         ],
     ),
     (
+        "干粮",
+        [
+            "干粮",
+            "干饭",
+            "主粮",
+            "dry food",
+            "dryfood",
+            "kibble",
+            "dog food",
+            "cat food",
+        ],
+    ),
+    (
         "猫砂",
         [
             "猫砂",

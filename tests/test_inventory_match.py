@@ -63,6 +63,40 @@ def test_pick_eat_today_prefers_open():
     assert picks[0]["brand"] == "B"
 
 
+def test_pick_eat_today_accepts_english_sample_categories():
+    items = [
+        {
+            "brand": "Sheba",
+            "flavor": "chicken",
+            "category": "wet food",
+            "quantity": 3,
+            "has_open_lot": False,
+            "best_by": "2026-05-01",
+        },
+        {
+            "brand": "Orijen",
+            "flavor": "original",
+            "category": "dry food",
+            "quantity": 2,
+            "has_open_lot": False,
+            "best_by": "2026-04-01",
+        },
+        {
+            "brand": "World's Best",
+            "flavor": "",
+            "category": "litter",
+            "quantity": 1,
+            "has_open_lot": False,
+            "best_by": "2027-01-01",
+        },
+    ]
+    picks = pick_eat_today(items, limit=5)
+    brands = {p["brand"] for p in picks}
+    assert "Sheba" in brands
+    assert "Orijen" in brands
+    assert "World's Best" not in brands
+
+
 def test_has_urgent_expiry():
     from datetime import date, timedelta
 

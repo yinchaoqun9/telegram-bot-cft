@@ -646,11 +646,16 @@ async def handle_today_command(chat_id: int, user_id: int) -> None:
     items = await get_supabase().list_inventory_for_user(str(user_id))
     picks = pick_eat_today(items, limit=3)
     if not picks:
-        await tg.send_message(
-            chat_id,
-            "No eatable pantry items right now. Log something with a voice note.",
-            parse_mode=None,
-        )
+        if items:
+            msg = (
+                "Nothing food-like to suggest (need wet/dry/freeze-dried/treats, etc.). "
+                "Try /list to see all items."
+            )
+        else:
+            msg = (
+                "No eatable pantry items right now. Log something with a voice note."
+            )
+        await tg.send_message(chat_id, msg, parse_mode=None)
         return
     lines = ["Today’s picks (open lots first):"]
     keyboard = []

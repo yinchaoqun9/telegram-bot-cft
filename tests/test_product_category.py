@@ -43,3 +43,8 @@ def test_explicit_default_still_works():
 def test_wet_food_alias():
     assert normalize_category("wet food") == "罐头"
     assert normalize_category("湿粮") == "罐头"
+
+
+def test_dry_food_alias():
+    assert normalize_category("dry food") == "干粮"
+    assert normalize_category("kibble") == "干粮"
