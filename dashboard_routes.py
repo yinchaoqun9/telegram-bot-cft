@@ -196,7 +196,7 @@ async def mark_used(
     try:
         status = await get_supabase().decrement_item_quantity(user_id, item_id, delta=delta)
         await notify_household_partners(
-            user_id, f"Household update: Used −1 (id {item_id[:8]}…)."
+            user_id, "partner_used", id=item_id[:8]
         )
     except SupabaseServiceError as e:
         raise HTTPException(status_code=404, detail=str(e)) from e
@@ -219,7 +219,7 @@ async def mark_open(
     try:
         status = await get_supabase().open_item(user_id, item_id, delta=delta)
         await notify_household_partners(
-            user_id, f"Household update: Opened −1 (id {item_id[:8]}…)."
+            user_id, "partner_open", id=item_id[:8]
         )
     except SupabaseServiceError as e:
         raise HTTPException(status_code=404, detail=str(e)) from e

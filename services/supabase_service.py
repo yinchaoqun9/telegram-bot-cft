@@ -1126,19 +1126,24 @@ class SupabaseService:
             try:
                 res = (
                     self.client.table("telegram_users")
-                    .select("user_id,chat_id")
+                    .select("user_id,chat_id,lang")
                     .eq("user_id", str(m.get("user_id")))
                     .limit(1)
                     .execute()
                 )
                 if res.data:
                     chat = res.data[0].get("chat_id")
+                    partner_lang = res.data[0].get("lang")
+                else:
+                    partner_lang = "en"
             except Exception:
                 chat = None
+                partner_lang = "en"
             out.append(
                 {
                     "user_id": str(m.get("user_id")),
                     "chat_id": chat,
+                    "lang": partner_lang or "en",
                 }
             )
         return out

@@ -6,8 +6,9 @@
 - **Add new items** → send a **voice note** (this is the main way to log stock).
 - **Open / used, fixes, commands** → voice **or** plain text both work.
 
-**Languages:** Voice and text work in Chinese or English (you can mix them).  
-Bot replies default to **English**. Switch anytime with `/language` (per person — partners can pick differently).
+**Languages**
+- You may **speak or type** Chinese or English anytime — what you say is **saved as spoken** (brands/flavors stay in that language).
+- **System replies** (menus, buttons, errors, digests) follow your personal setting: default **English**. Switch with `/language` (per person — household partners can each choose differently; this does **not** rewrite old inventory text).
 
 ---
 

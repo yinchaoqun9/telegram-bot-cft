@@ -18,6 +18,7 @@ from fastapi import FastAPI, Request, Response
 
 from services.ai_pipeline import extract_preferred, transcribe_preferred
 from services.assemblyai_service import AssemblyAIService, AssemblyAIServiceError
+from services.bot_i18n import t
 from services.brand_catalog import get_brand_catalog
 from services.brand_learning import apply_user_aliases, resolve_brand_with_user_learning
 from services.brand_web_research import maybe_refine_brand_with_web_search
@@ -72,18 +73,24 @@ def dashboard_page_url() -> str:
     return f"{base}/dashboard" if base else ""
 
 
+async def resolve_lang(user_id: int | str) -> str:
+    """Per-user UI language; default English. Does not alter stored inventory text."""
+    try:
+        lang = await get_supabase().get_user_lang(str(user_id))
+        if isinstance(lang, str) and lang.strip():
+            return lang
+    except Exception:
+        pass
+    return "en"
+
+
 async def build_welcome_message_for_user(
     user_id: int | str, *, is_start: bool = True
 ) -> str:
     """Localized /start and /help (default English; per-user lang)."""
     from services.bot_i18n import welcome_message
 
-    try:
-        lang = await get_supabase().get_user_lang(str(user_id))
-        if not isinstance(lang, str):
-            lang = "en"
-    except Exception:
-        lang = "en"
+    lang = await resolve_lang(user_id)
     return welcome_message(
         lang, is_start=is_start, dashboard_url=dashboard_page_url()
     )
@@ -232,6 +239,7 @@ async def process_voice_message(
     assemblyai_svc = get_assemblyai()
     supabase_svc = get_supabase()
     brand_cat = get_brand_catalog()
+    lang = await resolve_lang(user_id)
 
     # Persist user -> chat mapping for future reminders (private chat scenario)
     try:
@@ -245,16 +253,16 @@ async def process_voice_message(
         audio_bytes = await tg.download_voice(file_id)
     except TelegramServiceError as e:
         logger.error("Telegram download failed: %s", e)
-        await tg.send_error_message(chat_id, "Failed to download voice. Please try again.")
+        await tg.send_error_message(chat_id, t(lang, "err_download"))
         return
     except Exception as e:
         logger.exception("Unexpected error downloading voice: %s", e)
-        await tg.send_error_message(chat_id, "An error occurred. Please try again later.")
+        await tg.send_error_message(chat_id, t(lang, "err_generic"))
         return
 
     if not audio_bytes or len(audio_bytes) == 0:
         logger.warning("Empty voice file received")
-        await tg.send_error_message(chat_id, "Voice file was empty. Please try again.")
+        await tg.send_error_message(chat_id, t(lang, "err_empty_voice"))
         return
 
     # 2. Transcribe: Gemini 3.5 Transcribe → OpenAI gpt-transcribe → AssemblyAI
@@ -279,22 +287,22 @@ async def process_voice_message(
         ):
             await tg.send_error_message(
                 chat_id,
-                "Voice conversion failed (server needs ffmpeg). Ask admin to redeploy with Dockerfile or Nixpacks ffmpeg.",
+                t(lang, "err_ffmpeg"),
             )
         else:
             await tg.send_error_message(
                 chat_id,
-                "Could not transcribe the voice message. Please try again.",
+                t(lang, "err_transcribe"),
             )
         return
     except Exception as e:
         logger.exception("Unexpected transcription error: %s", e)
-        await tg.send_error_message(chat_id, "Transcription failed. Please try again.")
+        await tg.send_error_message(chat_id, t(lang, "err_transcribe_failed"))
         return
 
     if not transcription or not transcription.strip():
         await tg.send_message(
-            chat_id, "Could not transcribe the voice message. Please try again."
+            chat_id, t(lang, "err_empty_transcript")
         )
         return
 
@@ -306,7 +314,7 @@ async def process_voice_message(
         try:
             await tg.send_message(
                 chat_id,
-                f"Heard: {transcription.strip()[:200]}",
+                t(lang, "heard", text=transcription.strip()[:200]),
                 parse_mode=None,
             )
         except Exception:
@@ -326,7 +334,7 @@ async def process_voice_message(
     except (OpenAIServiceError, GeminiServiceError) as e:
         logger.error("LLM extraction error: %s", e)
         await tg.send_error_message(
-            chat_id, "Could not extract inventory data. Please try again."
+            chat_id, t(lang, "err_extract")
         )
         return
 
@@ -386,7 +394,7 @@ async def process_voice_message(
     if not items:
         await tg.send_error_message(
             chat_id,
-            "Could not find any inventory items in your message. Please try again.",
+            t(lang, "err_no_items"),
         )
         return
 
@@ -399,17 +407,17 @@ async def process_voice_message(
     except SupabaseServiceError as e:
         logger.exception("Supabase insert failed: %s", e)
         await tg.send_error_message(
-            chat_id, "Failed to save inventory. Please try again."
+            chat_id, t(lang, "err_save")
         )
         return
     except Exception as e:
         logger.exception("Unexpected Supabase error: %s", e)
-        await tg.send_error_message(chat_id, "Database error. Please try again later.")
+        await tg.send_error_message(chat_id, t(lang, "err_db"))
         return
 
     # 5. Confirm to user (async) - handles single or multiple items + delete buttons
     try:
-        await tg.send_saved_confirmation_multi(chat_id, inserted_rows)
+        await tg.send_saved_confirmation_multi(chat_id, inserted_rows, lang=lang)
         logger.info(
             "Successfully processed %d items for user=%s chat=%s",
             len(items),
@@ -426,15 +434,19 @@ async def process_voice_message(
         more = "" if len(inserted_rows) <= 3 else f" (+{len(inserted_rows) - 3} more)"
         await notify_household_partners(
             user_id,
-            f"Household update: voice logged {len(inserted_rows)} item(s) — {preview}{more}.",
+            "partner_voice",
+            n=len(inserted_rows),
+            preview=preview,
+            more=more,
         )
     except Exception as e:
         logger.exception("Failed to send confirmation to user: %s", e)
 
 
-async def notify_household_partners(actor_user_id, text: str) -> None:
+async def notify_household_partners(actor_user_id, msg_key: str, **kwargs) -> None:
     """
     Ping other household members who opted into change alerts.
+    Each partner gets the message in *their* UI language.
     Expiry digests are always sent separately to every member (send_reminders).
     """
     try:
@@ -449,6 +461,8 @@ async def notify_household_partners(actor_user_id, text: str) -> None:
         chat_id = p.get("chat_id")
         if chat_id is None:
             continue
+        plang = p.get("lang") or "en"
+        text = t(plang, msg_key, **kwargs)
         try:
             await tg.send_message(int(chat_id), text, parse_mode=None)
         except Exception:
@@ -457,36 +471,37 @@ async def notify_household_partners(actor_user_id, text: str) -> None:
 
 async def try_delete_saved_row(user_id: int, item_id: str) -> Tuple[bool, str]:
     """Delete entire inventory row (undo mistaken save)."""
+    lang = await resolve_lang(user_id)
     tid = (item_id or "").strip()
     if not tid:
-        return False, "Missing item id."
+        return False, t(lang, "missing_id")
     try:
         await get_supabase().delete_inventory_item(str(user_id), tid)
-        await notify_household_partners(
-            user_id, f"Household update: someone deleted an inventory row."
-        )
-        return True, "Entry deleted."
+        await notify_household_partners(user_id, "partner_delete")
+        lang = await resolve_lang(user_id)
+        return True, t(lang, "deleted_ok")
     except SupabaseServiceError as e:
         return False, str(e) or "Could not delete."
 
 
 async def try_decrement_inventory(user_id: int, item_id: str) -> Tuple[bool, str]:
     """Used: finish oldest open lot if any, else sealed qty −1."""
+    lang = await resolve_lang(user_id)
     tid = (item_id or "").strip()
     if not tid:
-        return False, "Missing item id."
+        return False, t(lang, "missing_id")
     try:
         status = await get_supabase().decrement_item_quantity(
             str(user_id), tid, delta=1
         )
         await notify_household_partners(
-            user_id, f"Household update: Used on an item (id {tid[:8]}…)."
+            user_id, "partner_used", id=tid[:8]
         )
         if status == "finished_open":
-            return True, "Finished an open lot (sealed qty unchanged)."
+            return True, t(lang, "used_finished_open")
         if status == "deleted":
-            return True, "Removed from inventory (quantity reached 0)."
-        return True, "Sealed quantity reduced by 1."
+            return True, t(lang, "used_deleted")
+        return True, t(lang, "used_sealed")
     except SupabaseServiceError as e:
         msg = str(e) or "Could not update item."
         return False, msg
@@ -494,17 +509,18 @@ async def try_decrement_inventory(user_id: int, item_id: str) -> Tuple[bool, str
 
 async def try_open_inventory(user_id: int, item_id: str) -> Tuple[bool, str]:
     """Open: sealed qty −1 + insert open_lots row."""
+    lang = await resolve_lang(user_id)
     tid = (item_id or "").strip()
     if not tid:
-        return False, "Missing item id."
+        return False, t(lang, "missing_id")
     try:
         status = await get_supabase().open_item(str(user_id), tid, delta=1)
         await notify_household_partners(
-            user_id, f"Household update: Opened −1 (id {tid[:8]}…)."
+            user_id, "partner_open", id=tid[:8]
         )
         if status == "deleted":
-            return True, "Opened last sealed unit."
-        return True, "Opened −1 (new open lot; sealed qty −1)."
+            return True, t(lang, "opened_last")
+        return True, t(lang, "opened_ok")
     except SupabaseServiceError as e:
         return False, str(e) or "Could not update item."
 
@@ -523,11 +539,11 @@ def _item_label(row: dict) -> str:
 
 
 def _consume_pick_keyboard(
-    action: str, candidates: list
+    action: str, candidates: list, *, lang: str = "en"
 ) -> tuple:
     """Build (text_lines_extra_unused, inline_keyboard) for open/used picks."""
     prefix = "o:" if action == "open" else "u:"
-    verb = "Open" if action == "open" else "Used"
+    verb = t(lang, "open_verb") if action == "open" else t(lang, "used_verb")
     keyboard = []
     for row in candidates:
         iid = str(row.get("id") or "")
@@ -543,10 +559,10 @@ def _consume_pick_keyboard(
 
 
 async def _send_consume_pick(
-    chat_id: int, action: str, candidates: list, *, header: str
+    chat_id: int, action: str, candidates: list, *, header: str, lang: str = "en"
 ) -> None:
     tg = get_telegram()
-    keyboard = _consume_pick_keyboard(action, candidates)
+    keyboard = _consume_pick_keyboard(action, candidates, lang=lang)
     text = header + "\n" + "\n".join(f"• {_item_label(r)}" for r in candidates)
     if keyboard:
         await tg.send_message_with_inline_keyboard(
@@ -567,25 +583,19 @@ async def apply_consume_match(
     from services.inventory_match import score_item, suggest_consume_candidates
 
     tg = get_telegram()
+    lang = await resolve_lang(user_id)
     items = await get_supabase().list_inventory_for_user(str(user_id))
     candidates, strict = suggest_consume_candidates(
         items, query, action=action, limit=3
     )
     if not candidates:
+        qshow = query or action
         if not items:
-            msg = (
-                "Your pantry is empty. Send a voice note to log something first."
-            )
+            msg = t(lang, "consume_empty")
         elif action == "open":
-            msg = (
-                f"Couldn't match “{query or action}”, and nothing has sealed "
-                "stock left to open.\nTry /today or log more with a voice note."
-            )
+            msg = t(lang, "consume_no_open", query=qshow)
         else:
-            msg = (
-                f"Couldn't match “{query or action}”, and nothing is available "
-                "to mark used.\nTry /today or log more with a voice note."
-            )
+            msg = t(lang, "consume_no_used", query=qshow)
         await tg.send_message(chat_id, msg, parse_mode=None)
         return True
 
@@ -595,9 +605,8 @@ async def apply_consume_match(
             chat_id,
             action,
             candidates,
-            header=(
-                f"Couldn't match “{qshow}”. Closest in your pantry — tap one:"
-            ),
+            header=t(lang, "consume_soft_header", query=qshow),
+            lang=lang,
         )
         return True
 
@@ -616,20 +625,23 @@ async def apply_consume_match(
         else:
             ok, detail = await try_decrement_inventory(user_id, iid)
         label = _item_label(top)
+        verb = t(lang, "open_verb") if action == "open" else t(lang, "used_verb")
         await tg.send_message(
             chat_id,
-            (f"{'Opened' if action == 'open' else 'Used'}: {label}\n{detail}")
+            t(lang, "consume_done", verb=verb, label=label, detail=detail)
             if ok
-            else f"Could not update: {detail}",
+            else t(lang, "consume_fail", detail=detail),
             parse_mode=None,
         )
         return True
 
+    act = t(lang, "action_open") if action == "open" else t(lang, "action_used")
     await _send_consume_pick(
         chat_id,
         action,
         candidates,
-        header=f"Which item to {action}?",
+        header=t(lang, "consume_which", action=act),
+        lang=lang,
     )
     return True
 
@@ -655,20 +667,22 @@ def _sort_pantry_browse(items: list) -> list:
     return sorted(items, key=key)
 
 
-def _open_used_row_buttons(r: dict) -> list:
+def _open_used_row_buttons(r: dict, *, lang: str = "en") -> list:
     iid = str(r.get("id") or "")
     if not iid:
         return []
     brand = ((r.get("brand") or "") + " " + (r.get("flavor") or "")).strip()[:18]
+    open_v = t(lang, "open_verb")
+    used_v = t(lang, "used_verb")
     row_btns = []
     if int(r.get("quantity") or 0) > 0:
         cb_o = f"o:{iid}"
         if len(cb_o.encode("utf-8")) <= 64:
-            label = f"Open {brand}".strip()[:40] or "Open"
+            label = f"{open_v} {brand}".strip()[:40] or open_v
             row_btns.append({"text": label, "callback_data": cb_o})
     cb_u = f"u:{iid}"
     if len(cb_u.encode("utf-8")) <= 64:
-        label = f"Used {brand}".strip()[:40] or "Used"
+        label = f"{used_v} {brand}".strip()[:40] or used_v
         row_btns.append({"text": label, "callback_data": cb_u})
     return row_btns
 
@@ -678,25 +692,21 @@ async def handle_today_command(chat_id: int, user_id: int) -> None:
     from services.inventory_match import pick_eat_today
 
     tg = get_telegram()
+    lang = await resolve_lang(user_id)
     items = await get_supabase().list_inventory_for_user(str(user_id))
     picks = pick_eat_today(items, limit=3)
     if not picks:
         if items:
-            msg = (
-                "Nothing food-like to suggest (need wet/dry/freeze-dried/treats, etc.). "
-                "Try /list to see all items."
-            )
+            msg = t(lang, "today_empty_food")
         else:
-            msg = (
-                "No eatable pantry items right now. Log something with a voice note."
-            )
+            msg = t(lang, "today_empty")
         await tg.send_message(chat_id, msg, parse_mode=None)
         return
-    lines = ["Today’s picks (open lots first):"]
+    lines = [t(lang, "today_header")]
     keyboard = []
     for r in picks:
         lines.append(f"• {_item_label(r)}")
-        row_btns = _open_used_row_buttons(r)
+        row_btns = _open_used_row_buttons(r, lang=lang)
         if row_btns:
             keyboard.append(row_btns)
     text = "\n".join(lines)
@@ -711,11 +721,12 @@ async def handle_today_command(chat_id: int, user_id: int) -> None:
 async def handle_list_command(chat_id: int, user_id: int) -> None:
     """Browse pantry in Telegram (capped) with Open/Used buttons."""
     tg = get_telegram()
+    lang = await resolve_lang(user_id)
     items = await get_supabase().list_inventory_for_user(str(user_id))
     if not items:
         await tg.send_message(
             chat_id,
-            "Pantry is empty. Send a voice note to log food, litter, or meds.",
+            t(lang, "list_empty"),
             parse_mode=None,
         )
         return
@@ -726,23 +737,23 @@ async def handle_list_command(chat_id: int, user_id: int) -> None:
     shown = ordered[:cap]
     more = len(ordered) - len(shown)
 
-    lines = [f"Your pantry ({len(ordered)} item(s)) — open lots first:"]
+    lines = [t(lang, "list_header", n=len(ordered))]
     keyboard = []
     for r in shown:
         lines.append(f"• {_item_label(r)}")
-        row_btns = _open_used_row_buttons(r)
+        row_btns = _open_used_row_buttons(r, lang=lang)
         if row_btns:
             keyboard.append(row_btns)
 
     if more > 0:
         dash = dashboard_page_url()
         extra = (
-            f"\n…and {more} more. Full list: {dash}"
+            t(lang, "list_more_dash", n=more, url=dash)
             if dash
-            else f"\n…and {more} more. Open the web dashboard for the full list."
+            else t(lang, "list_more", n=more)
         )
         lines.append(extra)
-    lines.append("\nOr /today for a short suggestion.")
+    lines.append(t(lang, "list_footer"))
 
     text = "\n".join(lines)
     if len(text) > 3900:
@@ -758,12 +769,13 @@ async def handle_list_command(chat_id: int, user_id: int) -> None:
 
 async def start_item_fix(user_id: int, item_id: str) -> str:
     """Arm pending Fix; next text auto-detects brand / quantity / category."""
+    lang = await resolve_lang(user_id)
     tid = (item_id or "").strip()
     if not tid:
-        return "Missing item id."
+        return t(lang, "missing_id")
     row = await get_supabase().get_inventory_item(str(user_id), tid)
     if not row:
-        return "Item not found."
+        return t(lang, "item_not_found")
     old_brand = (row.get("brand") or "").strip()
     old_qty = row.get("quantity")
     old_cat = (row.get("category") or "").strip()
@@ -773,13 +785,12 @@ async def start_item_fix(user_id: int, item_id: str) -> str:
         "old_quantity": old_qty,
         "old_category": old_cat,
     }
-    return (
-        "Send a correction (one or more fields in one message):\n"
-        f"• brand  (now: {old_brand or '—'})\n"
-        f"• quantity number  (now: {old_qty})\n"
-        f"• category e.g. 罐头/wet food/冻干  (now: {old_cat or '—'})\n"
-        "Example: 丸味 冻干\n"
-        "Or /cancel"
+    return t(
+        lang,
+        "fix_prompt",
+        brand=old_brand or "—",
+        qty=old_qty,
+        cat=old_cat or "—",
     )
 
 
@@ -792,16 +803,17 @@ async def apply_parsed_fix(
     field: str | None = None,
 ) -> Tuple[bool, str]:
     """Apply Fix patch (one or more fields); learn brand aliases when brand changes."""
+    lang = await resolve_lang(user_id)
     tid = (item_id or "").strip()
     if not tid or not patch:
-        return False, "Nothing to update."
+        return False, t(lang, "consume_fail", detail="nothing to update")
     # Legacy callers sometimes passed a single-field name; ignore if patch is full
     _ = field
     sb = get_supabase()
     try:
         existing = await sb.get_inventory_item(str(user_id), tid)
         if not existing:
-            return False, "Item not found."
+            return False, t(lang, "item_not_found")
         if "brand" in patch and not old_brand:
             old_brand = (existing.get("brand") or "").strip()
         await sb.update_inventory_fields(str(user_id), tid, patch)
@@ -842,9 +854,9 @@ async def apply_parsed_fix(
         )
         bits.append(f"category → {c}")
 
-    msg = "Updated " + ", ".join(bits) + "."
+    msg = t(lang, "fix_updated", bits=", ".join(bits))
     if "brand" in patch:
-        msg += " I'll remember the brand mapping for next time."
+        msg += t(lang, "fix_learned")
     return True, msg
 
 
@@ -857,9 +869,10 @@ async def handle_pending_fix_text(chat_id: int, user_id: int, text: str) -> bool
         return False
     raw = (text or "").strip()
     tg = get_telegram()
+    lang = await resolve_lang(user_id)
     if raw.lower() in ("/cancel", "cancel"):
         try:
-            await tg.send_message(chat_id, "Fix cancelled.", parse_mode=None)
+            await tg.send_message(chat_id, t(lang, "fix_cancelled"), parse_mode=None)
         except Exception:
             logger.exception("send_message failed")
         return True
@@ -870,7 +883,7 @@ async def handle_pending_fix_text(chat_id: int, user_id: int, text: str) -> bool
         try:
             await tg.send_message(
                 chat_id,
-                "Could not detect fields. Examples: 丸味 / 3 / 冻干 / 丸味 冻干",
+                t(lang, "fix_parse_fail"),
                 parse_mode=None,
             )
         except Exception:
@@ -885,7 +898,7 @@ async def handle_pending_fix_text(chat_id: int, user_id: int, text: str) -> bool
     try:
         await tg.send_message(
             chat_id,
-            detail if ok else f"Could not update: {detail}",
+            detail if ok else t(lang, "consume_fail", detail=detail),
             parse_mode=None,
         )
     except Exception:
@@ -911,10 +924,10 @@ async def apply_user_language(chat_id: int, user_id: int, lang: str) -> None:
         )
         saved = await get_supabase().set_user_lang(str(user_id), code)
     except SupabaseServiceError as e:
+        ulang = await resolve_lang(user_id)
         await tg.send_message(
             chat_id,
-            f"Could not save language: {e}\n"
-            "Run the telegram_users.lang SQL in README if missing.",
+            t(ulang, "lang_need_sql", detail=str(e)),
             parse_mode=None,
         )
         return
@@ -1036,6 +1049,7 @@ async def handle_household_command(chat_id: int, user_id: int, text: str) -> Non
     from services.household_service import HouseholdError, free_max_members
 
     tg = get_telegram()
+    lang = await resolve_lang(user_id)
     raw = (text or "").strip()
     parts = raw.split()
     cmd = parts[0].split("@")[0].lower() if parts else ""
@@ -1047,18 +1061,20 @@ async def handle_household_command(chat_id: int, user_id: int, text: str) -> Non
             if not code:
                 await tg.send_message(
                     chat_id,
-                    "Usage: /join PET-XXXX\nAsk your partner for their invite code.",
+                    t(lang, "hh_join_usage"),
                     parse_mode=None,
                 )
                 return
             summary = await supa.join_household(str(user_id), code)
             await tg.send_message(
                 chat_id,
-                "Joined shared pantry.\n"
-                f"Code: {summary.get('invite_code')}\n"
-                f"Members: {summary.get('member_count')}/{summary.get('max_members')}\n"
-                "Expiry digests go to everyone. "
-                "Optional live alerts: /notify on",
+                t(
+                    lang,
+                    "hh_joined",
+                    code=summary.get("invite_code"),
+                    n=summary.get("member_count"),
+                    max=summary.get("max_members"),
+                ),
                 parse_mode=None,
             )
             return
@@ -1073,9 +1089,7 @@ async def handle_household_command(chat_id: int, user_id: int, text: str) -> Non
             if arg not in ("on", "off"):
                 await tg.send_message(
                     chat_id,
-                    "Usage: /notify on  or  /notify off\n"
-                    "Turns partner alerts for voice / Open / Used on or off.\n"
-                    "Expiry digests always go to every household member.",
+                    t(lang, "hh_notify_usage"),
                     parse_mode=None,
                 )
                 return
@@ -1083,9 +1097,7 @@ async def handle_household_command(chat_id: int, user_id: int, text: str) -> Non
             await supa.set_notify_partner(str(user_id), enabled)
             await tg.send_message(
                 chat_id,
-                "Partner change alerts: ON."
-                if enabled
-                else "Partner change alerts: OFF (digests still arrive).",
+                t(lang, "hh_notify_on" if enabled else "hh_notify_off"),
                 parse_mode=None,
             )
             return
@@ -1093,36 +1105,47 @@ async def handle_household_command(chat_id: int, user_id: int, text: str) -> Non
         # /household
         summary = await supa.get_household_summary(str(user_id))
         if summary:
+            alerts = t(
+                lang,
+                "hh_alerts_on"
+                if summary.get("notify_partner_changes")
+                else "hh_alerts_off",
+            )
             await tg.send_message(
                 chat_id,
-                "Shared pantry\n"
-                f"Invite code: {summary.get('invite_code')}\n"
-                f"Members: {summary.get('member_count')}/{summary.get('max_members')} "
-                f"(free plan ≤{free_max_members()})\n"
-                f"Your partner alerts: "
-                f"{'ON' if summary.get('notify_partner_changes') else 'OFF'}\n\n"
-                "Share the code · /notify on|off · /leave",
+                t(
+                    lang,
+                    "hh_status",
+                    code=summary.get("invite_code"),
+                    n=summary.get("member_count"),
+                    max=summary.get("max_members"),
+                    free=free_max_members(),
+                    alerts=alerts,
+                ),
                 parse_mode=None,
             )
             return
         summary = await supa.create_household(str(user_id))
         await tg.send_message(
             chat_id,
-            "Created a shared pantry (free for 2 people).\n"
-            f"Invite code: {summary.get('invite_code')}\n"
-            "Partner runs: /join " + str(summary.get("invite_code")) + "\n"
-            "Both get expiry digests. Optional live alerts: /notify on",
+            t(
+                lang,
+                "hh_created",
+                code=summary.get("invite_code"),
+            ),
             parse_mode=None,
         )
     except HouseholdError as e:
         await tg.send_message(chat_id, str(e), parse_mode=None)
     except SupabaseServiceError as e:
-        await tg.send_message(chat_id, f"Household error: {e}", parse_mode=None)
+        await tg.send_message(
+            chat_id, t(lang, "hh_error", detail=str(e)), parse_mode=None
+        )
     except Exception as e:
         logger.exception("household command failed: %s", e)
         await tg.send_message(
             chat_id,
-            "Household tables may be missing. Ask admin to run the SQL in README.",
+            t(lang, "hh_tables_missing"),
             parse_mode=None,
         )
 
@@ -1135,11 +1158,12 @@ async def handle_used_command(chat_id: int, user_id: int, text: str) -> None:
     if cmd not in ("/used", "/open"):
         return
     tg = get_telegram()
+    lang = await resolve_lang(user_id)
     if len(parts) < 2 or not parts[1].strip():
         try:
             await tg.send_message(
                 chat_id,
-                f"Usage: {cmd} <item_id>\nCopy the id from the daily digest, or tap Open −1 after save.",
+                t(lang, "open_used_usage", cmd=cmd),
                 parse_mode=None,
             )
         except Exception as e:
@@ -1153,7 +1177,7 @@ async def handle_used_command(chat_id: int, user_id: int, text: str) -> None:
     try:
         await tg.send_message(
             chat_id,
-            detail if ok else f"Could not update: {detail}",
+            detail if ok else t(lang, "consume_fail", detail=detail),
             parse_mode=None,
         )
     except Exception as e:
@@ -1173,17 +1197,13 @@ async def handle_fix_command(chat_id: int, user_id: int, text: str) -> None:
     if cmd != "/fix":
         return
     tg = get_telegram()
+    lang = await resolve_lang(user_id)
     rest = parts[1].strip() if len(parts) > 1 else ""
     if not rest:
         try:
             await tg.send_message(
                 chat_id,
-                "Usage:\n"
-                "/fix <item_id>  (then send e.g. 丸味 冻干)\n"
-                "/fix brand <item_id> <name>\n"
-                "/fix quantity <item_id> <n>\n"
-                "/fix category <item_id> <罐头|wet food|…>\n"
-                "Or tap Fix under a Saved confirmation.",
+                t(lang, "fix_usage"),
                 parse_mode=None,
             )
         except Exception as e:
@@ -1199,7 +1219,9 @@ async def handle_fix_command(chat_id: int, user_id: int, text: str) -> None:
         patch = parse_fix_patch(f"{kind} {value}")
         if not patch:
             try:
-                await tg.send_message(chat_id, "Could not parse that fix.", parse_mode=None)
+                await tg.send_message(
+                    chat_id, t(lang, "fix_parse_that"), parse_mode=None
+                )
             except Exception as e:
                 logger.exception("send_message failed: %s", e)
             return
@@ -1207,7 +1229,7 @@ async def handle_fix_command(chat_id: int, user_id: int, text: str) -> None:
         try:
             await tg.send_message(
                 chat_id,
-                detail if ok else f"Could not update: {detail}",
+                detail if ok else t(lang, "consume_fail", detail=detail),
                 parse_mode=None,
             )
         except Exception as e:
@@ -1224,7 +1246,7 @@ async def handle_fix_command(chat_id: int, user_id: int, text: str) -> None:
     try:
         await tg.send_message(
             chat_id,
-            "Usage: /fix <item_id>  or  /fix brand|quantity|category <item_id> <value>",
+            t(lang, "fix_usage_short"),
             parse_mode=None,
         )
     except Exception as e:
@@ -1246,9 +1268,10 @@ async def _voice_pipeline_guarded(chat_id: int, user_id: int, file_id: str) -> N
             user_id,
         )
         try:
+            lang = await resolve_lang(user_id)
             await get_telegram().send_error_message(
                 chat_id,
-                "Something went wrong while processing your voice. Please try again.",
+                t(lang, "pipeline_crash"),
             )
         except Exception:
             logger.exception(
@@ -1367,17 +1390,18 @@ async def webhook(request: Request) -> Response:
                 logger.exception("handle_fix_command failed")
         elif cmd0 in ("/dashboard", "dashboard"):
             try:
+                lang = await resolve_lang(user_id)
                 dash = dashboard_page_url()
                 if dash:
                     await tg.send_message(
                         chat_id,
-                        f"Open the web dashboard:\n{dash}",
+                        t(lang, "dashboard_link", url=dash),
                         parse_mode=None,
                     )
                 else:
                     await tg.send_message(
                         chat_id,
-                        "Dashboard URL is not configured yet. Ask the admin for /dashboard.",
+                        t(lang, "dashboard_missing"),
                         parse_mode=None,
                     )
             except Exception:
@@ -1389,9 +1413,10 @@ async def webhook(request: Request) -> Response:
                 elif await handle_pending_brand_fix_text(chat_id, user_id, text_raw):
                     pass
                 elif text_raw.startswith("/"):
+                    lang = await resolve_lang(user_id)
                     await tg.send_message(
                         chat_id,
-                        "Unknown command. Try /help · /list · /today",
+                        t(lang, "unknown_cmd"),
                         parse_mode=None,
                     )
             except Exception:

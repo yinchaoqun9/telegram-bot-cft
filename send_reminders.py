@@ -26,6 +26,7 @@ from typing import Any, Dict, List, Tuple
 
 from dotenv import load_dotenv
 
+from services.bot_i18n import lang_from_user_row, t
 from services.inventory_match import pick_eat_today
 from services.supabase_service import SupabaseService
 from services.telegram_service import TelegramService
@@ -79,25 +80,23 @@ def _build_digest_text(
     window_days: int,
     button_cap: int,
     with_buttons: List[Dict[str, Any]],
+    *,
+    lang: str = "en",
 ) -> str:
     parts: List[str] = []
     if within_7:
-        parts.append("⏰ Expiring within 7 days:")
+        parts.append(t(lang, "digest_7"))
         parts.extend(_format_item_line(r) for r in within_7)
     if within_8_15:
         if parts:
             parts.append("")
-        parts.append(f"⏰ Expiring in 8–{window_days} days:")
+        parts.append(t(lang, "digest_8n", n=window_days))
         parts.extend(_format_item_line(r) for r in within_8_15)
 
     total_items = len(within_7) + len(within_8_15)
     if total_items > len(with_buttons):
         parts.append("")
-        parts.append(
-            f"Use buttons for the first {len(with_buttons)} items, or send:\n"
-            "/used <item_id>\n"
-            "(copy id from the line under each item above.)"
-        )
+        parts.append(t(lang, "digest_buttons_hint", n=len(with_buttons)))
     return "\n".join(parts)
 
 
@@ -105,6 +104,8 @@ def _items_for_buttons(
     within_7: List[Dict[str, Any]],
     within_8_15: List[Dict[str, Any]],
     cap: int,
+    *,
+    lang: str = "en",
 ) -> Tuple[List[Dict[str, Any]], List[List[Dict[str, str]]]]:
     """Ordered list of rows that get a button + inline_keyboard rows (one button each)."""
     ordered: List[Dict[str, Any]] = []
@@ -127,7 +128,8 @@ def _items_for_buttons(
             logger.warning("callback_data too long for item id=%s, skipping button", iid[:8])
             continue
         brand = ((r.get("brand") or "") + " " + (r.get("flavor") or "")).strip()[:24]
-        label = f"Used −1 {brand}".strip() if brand else "Used −1"
+        used = t(lang, "used_verb")
+        label = f"{used} −1 {brand}".strip() if brand else f"{used} −1"
         if len(label) > 40:
             label = label[:37] + "…"
         keyboard.append([{"text": label, "callback_data": cb}])
@@ -136,12 +138,13 @@ def _items_for_buttons(
 
 def _build_eat_today(
     picks: List[Dict[str, Any]],
+    *,
+    lang: str = "en",
 ) -> Tuple[str, List[List[Dict[str, str]]]]:
-    lines = [
-        "No near-expiry items today.",
-        "Today’s picks (open lots first) — tap Open or Used:",
-    ]
+    lines = [t(lang, "eat_today_intro")]
     keyboard: List[List[Dict[str, str]]] = []
+    open_v = t(lang, "open_verb")
+    used_v = t(lang, "used_verb")
     for r in picks:
         lines.append(_format_item_line(r))
         iid = str(r.get("id") or "")
@@ -152,15 +155,15 @@ def _build_eat_today(
         if int(r.get("quantity") or 0) > 0:
             cb_o = f"o:{iid}"
             if len(cb_o.encode("utf-8")) <= 64:
-                label = f"Open {brand}".strip()[:40] or "Open"
+                label = f"{open_v} {brand}".strip()[:40] or open_v
                 row_btns.append({"text": label, "callback_data": cb_o})
         cb_u = f"u:{iid}"
         if len(cb_u.encode("utf-8")) <= 64:
-            label = f"Used {brand}".strip()[:40] or "Used"
+            label = f"{used_v} {brand}".strip()[:40] or used_v
             row_btns.append({"text": label, "callback_data": cb_u})
         if row_btns:
             keyboard.append(row_btns)
-    lines.append("\nOr /today anytime.")
+    lines.append(t(lang, "eat_today_footer"))
     return "\n".join(lines), keyboard
 
 
@@ -191,10 +194,13 @@ async def main() -> None:
         within_7, within_8_15 = await supa.get_digest_buckets_for_user(
             uid, today, window_days=window
         )
+        lang = lang_from_user_row(u)
         if within_7 or within_8_15:
-            with_buttons, keyboard = _items_for_buttons(within_7, within_8_15, btn_cap)
+            with_buttons, keyboard = _items_for_buttons(
+                within_7, within_8_15, btn_cap, lang=lang
+            )
             text = _build_digest_text(
-                within_7, within_8_15, window, btn_cap, with_buttons
+                within_7, within_8_15, window, btn_cap, with_buttons, lang=lang
             )
         else:
             try:
@@ -205,7 +211,7 @@ async def main() -> None:
             picks = pick_eat_today(items, limit=3)
             if not picks:
                 continue
-            text, keyboard = _build_eat_today(picks)
+            text, keyboard = _build_eat_today(picks, lang=lang)
 
         try:
             if keyboard:

@@ -237,19 +237,24 @@ class TelegramService:
         self,
         chat_id: Union[int, str],
         saved_rows: List[Dict[str, Any]],
+        *,
+        lang: str = "en",
     ) -> None:
         """
         Send confirmation for saved rows (must include Supabase `id` per row).
         Adds inline Delete buttons (callback_data d:{uuid}).
+        Brand/flavor/category text stays as stored (spoken language).
+        Wrapper labels follow `lang`.
         """
+        from services.bot_i18n import t
+
         if not saved_rows:
             return
 
-        footer = (
-            "\n\nTap Fix, then send a brand name, a number (qty), or a category "
-            "(罐头/wet food/冻干…).\n"
-            "Open −1 = opened one pack/can. Delete removes the row."
-        )
+        footer = t(lang, "saved_footer")
+        btn_fix = t(lang, "btn_fix")
+        btn_open = t(lang, "btn_open")
+        btn_del = t(lang, "btn_delete")
 
         def _row_keyboard(rows: List[Dict[str, Any]]) -> List[List[Dict[str, str]]]:
             kb: List[List[Dict[str, str]]] = []
@@ -270,22 +275,28 @@ class TelegramService:
                 suffix = f" #{idx + 1}" if multi else ""
                 kb.append(
                     [
-                        {"text": f"Fix{suffix}", "callback_data": f_cb},
-                        {"text": f"Open −1{suffix}", "callback_data": o_cb},
-                        {"text": f"Delete{suffix}", "callback_data": d_cb},
+                        {"text": f"{btn_fix}{suffix}", "callback_data": f_cb},
+                        {"text": f"{btn_open}{suffix}", "callback_data": o_cb},
+                        {"text": f"{btn_del}{suffix}", "callback_data": d_cb},
                     ]
                 )
             return kb
 
-        if len(saved_rows) == 1:
-            item = saved_rows[0]
+        def _line(item: Dict[str, Any]) -> str:
             cat = (item.get("category") or "").strip()
             cat_bit = f"[{cat}] " if cat else ""
-            msg = (
-                f"Saved: {cat_bit}{item.get('brand', '') or ''} {item.get('flavor', '') or ''}, "
-                f"expires {item.get('best_by', '') or ''}, quantity {int(item.get('quantity') or 0)}"
+            return t(
+                lang,
+                "saved_line",
+                cat=cat_bit,
+                brand=item.get("brand", "") or "",
+                flavor=item.get("flavor", "") or "",
+                best_by=item.get("best_by", "") or "",
+                qty=int(item.get("quantity") or 0),
             )
-            msg += footer
+
+        if len(saved_rows) == 1:
+            msg = t(lang, "saved_one", line=_line(saved_rows[0])) + footer
             kb = _row_keyboard(saved_rows)
             if kb:
                 await self.send_message_with_inline_keyboard(
@@ -295,23 +306,13 @@ class TelegramService:
                 await self.send_message(chat_id, msg, parse_mode=None)
             return
 
-        lines = []
-        for idx, item in enumerate(saved_rows, start=1):
-            brand = item.get("brand", "") or ""
-            flavor = item.get("flavor", "") or ""
-            best_by = item.get("best_by", "") or ""
-            qty = int(item.get("quantity") or 0)
-            cat = (item.get("category") or "").strip()
-            cpre = f"[{cat}] " if cat else ""
-            lines.append(
-                f"{idx}) {cpre}{brand} {flavor}, expires {best_by}, quantity {qty}"
-            )
-
-        msg = "Saved {count} items:\n{items}{footer}".format(
+        lines = [f"{idx}) {_line(item)}" for idx, item in enumerate(saved_rows, start=1)]
+        msg = t(
+            lang,
+            "saved_many",
             count=len(saved_rows),
             items="\n".join(lines),
-            footer=footer,
-        )
+        ) + footer
         kb = _row_keyboard(saved_rows)
         if kb:
             await self.send_message_with_inline_keyboard(
