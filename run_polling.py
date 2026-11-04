@@ -117,22 +117,11 @@ async def main() -> None:
                     text_lower.split(maxsplit=1)[0].split("@")[0] if text_lower else ""
                 )
                 if cmd0 in ("/start", "/help"):
-                    from main import dashboard_page_url
+                    from main import build_welcome_message
 
-                    dash = dashboard_page_url()
-                    dash_line = (
-                        f"\n\nWeb dashboard:\n{dash}"
-                        if dash
-                        else "\n\nWeb dashboard: /dashboard on your bot host (Telegram Login)."
-                    )
                     await tg.send_message(
                         chat_id,
-                        "Pet Pantry — voice-log cat/dog food, litter, and meds.\n"
-                        "After saving: Fix · Open −1 · Delete\n"
-                        "/list · /today · /fix · /open · /used\n"
-                        "Say “开了 XX” / “opened XX” or “用了 XX” / “used XX”.\n"
-                        "Share pantry (free for 2): /household · /join CODE · /notify on|off"
-                        + dash_line,
+                        build_welcome_message(is_start=(cmd0 == "/start")),
                         parse_mode=None,
                     )
                 elif cmd0 in ("/used", "/open"):

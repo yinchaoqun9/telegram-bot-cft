@@ -72,6 +72,51 @@ def dashboard_page_url() -> str:
     return f"{base}/dashboard" if base else ""
 
 
+def build_welcome_message(*, is_start: bool = True) -> str:
+    """Friendly /start and /help copy (ZH + EN, scannable)."""
+    hello = (
+        "嗨，我是 Pet Pantry 🐾\n"
+        "帮你用语音记猫狗粮、猫砂和药——中英文都行，随便说。"
+        if is_start
+        else "Pet Pantry 使用小抄 🐾\n中英文语音 / 文字都行。"
+    )
+    dash = dashboard_page_url()
+    dash_block = (
+        f"\n\n🌐 网页看板\n{dash}\n"
+        "用 Telegram 登录后，只看你自己的柜子。"
+        if dash
+        else "\n\n🌐 网页看板\n问管理员要 /dashboard 链接（需先配置好）。"
+    )
+    return (
+        f"{hello}\n"
+        "\n"
+        "───\n"
+        "🎤 怎么记库存\n"
+        "直接发一条语音，例如：\n"
+        "· 「丸味冻干还剩三袋」\n"
+        "· “Two cans of Fancy Feast chicken, best by June 2026”\n"
+        "也可以一次说好几样。保存后可点 Fix / Open / Delete。\n"
+        "\n"
+        "📦 每天怎么用\n"
+        "/list — 看看柜子里有什么\n"
+        "/today — 今天建议吃 / 用哪几样\n"
+        "开封：说「开了 XX」或 opened XX\n"
+        "用完：说「用了 XX」或 used XX\n"
+        "（对不上时会给你按钮选）\n"
+        "\n"
+        "✏️ 改错了\n"
+        "点 Fix，或 /fix\n"
+        "\n"
+        "👫 和家人共用（免费 2 人）\n"
+        "/household — 创建 / 看邀请码\n"
+        "/join 邀请码 — 加入对方柜子\n"
+        "/notify on — 对方改动时提醒你（可关）\n"
+        f"{dash_block}\n"
+        "\n"
+        "再发 /help 随时回来看这张小抄 ✨"
+    )
+
+
 def get_openai() -> OpenAIService:
     """Get or create OpenAI service."""
     global _openai
@@ -1234,20 +1279,9 @@ async def webhook(request: Request) -> Response:
         tg = get_telegram()
         if cmd0 in ("/start", "/help"):
             try:
-                dash = dashboard_page_url()
-                dash_line = (
-                    f"\n\nWeb dashboard (your inventory only):\n{dash}"
-                    if dash
-                    else "\n\nWeb dashboard: ask the admin for the /dashboard link after Telegram Login is set up."
-                )
                 await tg.send_message(
                     chat_id,
-                    "Pet Pantry — voice-log cat/dog food, litter, and meds.\n"
-                    "After saving: Fix · Open −1 · Delete\n"
-                    "/list · /today · /fix · /open · /used\n"
-                    "Say “开了 XX” / “opened XX” or “用了 XX” / “used XX”.\n"
-                    "Share pantry (free for 2): /household · /join CODE · /notify on|off"
-                    + dash_line,
+                    build_welcome_message(is_start=(cmd0 == "/start")),
                     parse_mode=None,
                 )
             except Exception as e:
