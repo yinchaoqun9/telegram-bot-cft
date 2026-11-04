@@ -222,7 +222,7 @@ class SupabaseService:
                 )
                 .gt("quantity", 0)
                 .gte("best_by", today.isoformat())
-                .le("best_by", end.isoformat())
+                .lte("best_by", end.isoformat())
                 .limit(500)
             )
             if household_id:
@@ -239,7 +239,7 @@ class SupabaseService:
                     .eq("user_id", str(user_id))
                     .gt("quantity", 0)
                     .gte("best_by", today.isoformat())
-                    .le("best_by", end.isoformat())
+                    .lte("best_by", end.isoformat())
                     .limit(500)
                     .execute()
                 )
