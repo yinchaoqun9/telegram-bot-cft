@@ -1218,7 +1218,7 @@ async def webhook(request: Request) -> Response:
         text_lower = text_raw.lower()
         cmd0 = text_lower.split(maxsplit=1)[0].split("@")[0] if text_lower else ""
         tg = get_telegram()
-        if text_lower in ("/start", "/help"):
+        if cmd0 in ("/start", "/help"):
             try:
                 dash = dashboard_public_url()
                 dash_line = (
@@ -1263,12 +1263,35 @@ async def webhook(request: Request) -> Response:
                 await handle_fix_command(chat_id, user_id, text_raw)
             except Exception:
                 logger.exception("handle_fix_command failed")
+        elif cmd0 in ("/dashboard", "dashboard"):
+            try:
+                dash = dashboard_public_url()
+                if dash:
+                    await tg.send_message(
+                        chat_id,
+                        f"Open the web dashboard:\n{dash}/dashboard",
+                        parse_mode=None,
+                    )
+                else:
+                    await tg.send_message(
+                        chat_id,
+                        "Dashboard URL is not configured yet. Ask the admin for /dashboard.",
+                        parse_mode=None,
+                    )
+            except Exception:
+                logger.exception("dashboard hint failed")
         else:
             try:
                 if await handle_consume_text(chat_id, user_id, text_raw):
                     pass
-                else:
-                    await handle_pending_brand_fix_text(chat_id, user_id, text_raw)
+                elif await handle_pending_brand_fix_text(chat_id, user_id, text_raw):
+                    pass
+                elif text_raw.startswith("/"):
+                    await tg.send_message(
+                        chat_id,
+                        "Unknown command. Try /help · /list · /today",
+                        parse_mode=None,
+                    )
             except Exception:
                 logger.exception("pending fix / consume text failed")
 

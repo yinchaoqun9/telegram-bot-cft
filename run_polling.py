@@ -116,7 +116,7 @@ async def main() -> None:
                 cmd0 = (
                     text_lower.split(maxsplit=1)[0].split("@")[0] if text_lower else ""
                 )
-                if text_lower in ("/start", "/help"):
+                if cmd0 in ("/start", "/help"):
                     from main import dashboard_public_url
 
                     dash = dashboard_public_url()
@@ -151,11 +151,32 @@ async def main() -> None:
                     await handle_household_command(chat_id, user_id, text_raw)
                 elif cmd0 == "/fix":
                     await handle_fix_command(chat_id, user_id, text_raw)
+                elif cmd0 in ("/dashboard", "dashboard"):
+                    from main import dashboard_public_url
+
+                    dash = dashboard_public_url()
+                    await tg.send_message(
+                        chat_id,
+                        f"Open the web dashboard:\n{dash}/dashboard"
+                        if dash
+                        else "Dashboard URL is not configured yet.",
+                        parse_mode=None,
+                    )
                 else:
                     from main import handle_consume_text
 
-                    if not await handle_consume_text(chat_id, user_id, text_raw):
-                        await handle_pending_brand_fix_text(chat_id, user_id, text_raw)
+                    if await handle_consume_text(chat_id, user_id, text_raw):
+                        pass
+                    elif await handle_pending_brand_fix_text(
+                        chat_id, user_id, text_raw
+                    ):
+                        pass
+                    elif text_raw.startswith("/"):
+                        await tg.send_message(
+                            chat_id,
+                            "Unknown command. Try /help · /list · /today",
+                            parse_mode=None,
+                        )
 
 
 if __name__ == "__main__":
