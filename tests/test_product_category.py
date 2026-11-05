@@ -70,3 +70,19 @@ def test_storage_keeps_spoken_chinese():
 def test_storage_infers_english_from_transcript():
     assert category_for_storage("", "three lickable chicken sticks") == "lickable"
     assert category_for_storage("", "one broth pouch salmon") == "broth pouch"
+
+
+def test_storage_en_transcript_rejects_llm_chinese():
+    """LLM often returns 罐头 even when the user spoke English."""
+    assert (
+        category_for_storage("罐头", "finish 9 lives tuna can") == "can"
+        or category_for_storage("罐头", "bought wet food tuna") == "wet food"
+    )
+    # Prefer spoken alias in transcript
+    assert category_for_storage("罐头", "added three lickable treats") == "lickable"
+    assert category_for_storage("罐头", "one can of tuna") in ("can", "wet food")
+
+
+def test_normalize_can_alias():
+    assert normalize_category("can") == "罐头"
+    assert normalize_category("", "tuna can") == "罐头"

@@ -17,8 +17,10 @@ _OPEN = re.compile(
 )
 _USED = re.compile(
     r"(?:"
-    r"用了|用掉|吃了|吃完|喝了|喂了|"
-    r"\bused\b|\bfinished\b|\bate\b|\beaten\b"
+    r"用了|用掉|用完|吃了|吃完|吃光|喝了|喂了|搞定|"
+    # finish/finished — common voice phrasing for “used up”
+    r"\bused\b|\bfinished\b|\bfinish\b|\bfinishing\b|"
+    r"\bate\b|\beaten\b|\ball\s+gone\b|\bgone\b"
     r")",
     re.IGNORECASE,
 )
@@ -39,12 +41,14 @@ def detect_consume_intent(text: str) -> Tuple[Optional[str], str]:
 
     if open_m and (not used_m or open_m.start() <= used_m.start()):
         query = (raw[: open_m.start()] + raw[open_m.end() :]).strip(" ，,。.!！?？")
-        query = re.sub(r"^(一|两|二|三|\d+)\s*(罐|袋|盒|瓶|份)?", "", query).strip()
+        query = re.sub(r"^(一|两|二|三|\d+)\s*(罐|袋|盒|瓶|份|cans?|packs?)?", "", query, flags=re.I).strip()
         return "open", query or raw
 
     if used_m:
         query = (raw[: used_m.start()] + raw[used_m.end() :]).strip(" ，,。.!！?？")
-        query = re.sub(r"^(一|两|二|三|\d+)\s*(罐|袋|盒|瓶|份)?", "", query).strip()
+        query = re.sub(r"^(一|两|二|三|\d+)\s*(罐|袋|盒|瓶|份|cans?|packs?)?", "", query, flags=re.I).strip()
+        # Drop leading articles / filler
+        query = re.sub(r"^(the|a|an|my|that|this)\s+", "", query, flags=re.I).strip()
         return "used", query or raw
 
     return None, raw

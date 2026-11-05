@@ -601,13 +601,13 @@ async def apply_consume_match(
     Returns True if a consume reply was sent (caller should skip inventory extract).
     Soft (no score hit) candidates never auto-apply — buttons only.
     """
-    from services.inventory_match import score_item, suggest_consume_candidates
+    from services.inventory_match import should_auto_apply, suggest_consume_candidates
 
     tg = get_telegram()
     lang = await resolve_lang(user_id)
     items = await get_supabase().list_inventory_for_user(str(user_id))
     candidates, strict = suggest_consume_candidates(
-        items, query, action=action, limit=3
+        items, query, action=action, limit=5
     )
     if not candidates:
         qshow = query or action
@@ -632,12 +632,8 @@ async def apply_consume_match(
         return True
 
     top = candidates[0]
-    # Auto-apply only for strict hits: single hit, or clear winner vs runner-up
-    auto = len(candidates) == 1
-    if not auto and len(candidates) >= 2:
-        s0 = score_item(query, candidates[0])
-        s1 = score_item(query, candidates[1])
-        auto = bool(query.strip()) and s0 >= s1 + 25 and s0 >= 40
+    # Brand-aware gate: never auto on flavor-only / weak single hits
+    auto = should_auto_apply(query, candidates)
 
     if auto:
         iid = str(top.get("id") or "")

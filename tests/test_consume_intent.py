@@ -24,6 +24,20 @@ def test_used_en():
     assert action == "used"
 
 
+def test_finish_en_is_used():
+    """Voice often says finish, not finished/used."""
+    action, q = detect_consume_intent("finish 9 lives tuna can")
+    assert action == "used"
+    assert "9" in q.lower() or "lives" in q.lower()
+    assert "tuna" in q.lower()
+
+
+def test_finished_en():
+    action, q = detect_consume_intent("finished the Ziwi beef")
+    assert action == "used"
+    assert "Ziwi" in q or "beef" in q
+
+
 def test_no_intent():
     action, q = detect_consume_intent("买了两罐罐头")
     assert action is None

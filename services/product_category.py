@@ -33,6 +33,8 @@ _CATEGORY_ALIASES: List[Tuple[str, List[str]]] = [
             "wet",
             "canned food",
             "canned",
+            # spoken “tuna can” / “a can of …”
+            "can",
         ],
     ),
     (
@@ -184,6 +186,32 @@ def spoken_category_alias_from_transcription(transcription: str) -> str:
 # Empty by default: do not force wet food when the user never said a type.
 DEFAULT_CATEGORY = ""
 
+# When the user spoke English but the LLM returned a ZH canonical, store EN.
+_CANONICAL_EN_LABEL: dict = {
+    "冻干": "freeze-dried",
+    "罐头": "wet food",
+    "汤包": "broth pouch",
+    "猫条": "lickable",
+    "零食": "treat",
+    "干粮": "dry food",
+    "猫砂": "litter",
+    "药品": "meds",
+}
+
+
+def _has_cjk(s: str) -> bool:
+    return any("\u4e00" <= c <= "\u9fff" for c in (s or ""))
+
+
+def transcript_looks_english(transcription: str) -> bool:
+    """True when Latin letters clearly dominate over CJK in the transcript."""
+    t = transcription or ""
+    latin = sum(1 for c in t if ("a" <= c.lower() <= "z"))
+    cjk = sum(1 for c in t if "\u4e00" <= c <= "\u9fff")
+    if latin == 0 and cjk == 0:
+        return False
+    return latin >= max(3, cjk * 2)
+
 
 def normalize_category(
     raw: str, transcription: str = "", *, default: Optional[str] = None
@@ -214,14 +242,30 @@ def normalize_category(
 
 def category_for_storage(raw: str, transcription: str = "") -> str:
     """
-    Category text to persist: keep spoken / LLM wording when it is a known type.
-    Example: "lickable" stays "lickable" (not remapped to 猫条).
-    Matching still uses normalize_category → Chinese keys.
+    Persist category in the language the user spoke.
+
+    - Prefer an alias actually present in the transcript (e.g. lickable, can).
+    - If the LLM returns ZH (罐头) but the transcript is English → store EN label.
+    - Matching still uses normalize_category → Chinese keys.
     """
-    s = (raw or "").strip()
-    if s and normalize_category(s, "", default=""):
-        return s
     spoken = spoken_category_alias_from_transcription(transcription)
     if spoken:
         return spoken
-    return ""
+
+    s = (raw or "").strip()
+    key = normalize_category(s, transcription, default="") if (s or transcription) else ""
+    if not key:
+        return ""
+
+    en_mode = transcript_looks_english(transcription)
+    if s:
+        if en_mode and _has_cjk(s):
+            return _CANONICAL_EN_LABEL.get(key, _CANONICAL_EN_LABEL.get(normalize_category(s, ""), s))
+        if (not en_mode) and _has_cjk(transcription) and not _has_cjk(s):
+            # Chinese speech but LLM returned English → keep ZH canonical
+            return key
+        return s
+
+    if en_mode:
+        return _CANONICAL_EN_LABEL.get(key, key)
+    return key

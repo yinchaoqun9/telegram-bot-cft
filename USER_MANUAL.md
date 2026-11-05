@@ -137,7 +137,8 @@ You can have **more than one** open portion of the same product at once (e.g. tw
 **English**
 
 - “Opened Ziwi beef”
-- “Used the freeze dried”
+- “Used the freeze dried”  
+- “Finish 9 Lives tuna” / “finished the can” (same as Used)
 - “Finished Tiki Cat”
 
 **中文**
