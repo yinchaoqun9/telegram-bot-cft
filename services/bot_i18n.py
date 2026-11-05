@@ -137,16 +137,16 @@ _MESSAGES: Dict[str, Dict[str, str]] = {
         "zh": "现在没有可吃的库存。先发语音记一点吧。",
     },
     "today_header": {
-        "en": "Today’s picks (open lots first):",
-        "zh": "今日推荐（开封份优先）：",
+        "en": "Today’s picks (open lots first, then soonest expiry):",
+        "zh": "今日推荐（开封份优先，再按保质期由近到远）：",
     },
     "list_empty": {
         "en": "Pantry is empty. Send a voice note to log food, litter, or meds.",
         "zh": "柜子是空的。发语音记粮、猫砂或药品吧。",
     },
     "list_header": {
-        "en": "Your pantry ({n} item(s)) — open lots first:",
-        "zh": "你的柜子（共 {n} 项）— 开封份优先：",
+        "en": "Your pantry ({n} item(s)) — open lots first, then soonest expiry:",
+        "zh": "你的柜子（共 {n} 项）— 开封份优先，再按保质期由近到远：",
     },
     "list_more_dash": {
         "en": "\n…and {n} more. Full list: {url}",

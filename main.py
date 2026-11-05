@@ -526,6 +526,14 @@ async def try_open_inventory(user_id: int, item_id: str) -> Tuple[bool, str]:
         return False, str(e) or "Could not update item."
 
 
+def _short_best_by(row: dict) -> str:
+    """YYYY-MM-DD for display; em dash if missing."""
+    bb = str(row.get("best_by") or "").strip()
+    if not bb:
+        return "—"
+    return bb[:10]
+
+
 def _item_label(row: dict) -> str:
     brand = (row.get("brand") or "").strip()
     flavor = (row.get("flavor") or "").strip()
@@ -536,13 +544,25 @@ def _item_label(row: dict) -> str:
     name = " ".join(bits) or "item"
     cpre = f"[{cat}] " if cat else ""
     open_bit = f", open×{open_n}" if open_n else ""
-    return f"{cpre}{name} (qty {qty}{open_bit})"
+    bb = _short_best_by(row)
+    return f"{cpre}{name} · {bb} (qty {qty}{open_bit})"
+
+
+def _button_name_with_date(row: dict, *, name_max: int = 22) -> str:
+    """Brand+flavor trimmed, always keep best_by so duplicate SKUs differ on buttons."""
+    brand = ((row.get("brand") or "") + " " + (row.get("flavor") or "")).strip()
+    bb = _short_best_by(row)
+    if brand:
+        # Leave room for " · YYYY-MM-DD" (~13 chars)
+        trimmed = brand if len(brand) <= name_max else (brand[: max(1, name_max - 1)] + "…")
+        return f"{trimmed} · {bb}"
+    return bb
 
 
 def _consume_pick_keyboard(
     action: str, candidates: list, *, lang: str = "en"
-) -> tuple:
-    """Build (text_lines_extra_unused, inline_keyboard) for open/used picks."""
+) -> list:
+    """Build inline_keyboard for open/used picks (date on each button)."""
     prefix = "o:" if action == "open" else "u:"
     verb = t(lang, "open_verb") if action == "open" else t(lang, "used_verb")
     keyboard = []
@@ -550,8 +570,8 @@ def _consume_pick_keyboard(
         iid = str(row.get("id") or "")
         if not iid:
             continue
-        brand = ((row.get("brand") or "") + " " + (row.get("flavor") or "")).strip()
-        label = f"{verb} {brand}".strip()[:40] or verb
+        name = _button_name_with_date(row)
+        label = f"{verb} {name}".strip()[:64] or verb
         cb = f"{prefix}{iid}"
         if len(cb.encode("utf-8")) > 64:
             continue
@@ -672,18 +692,18 @@ def _open_used_row_buttons(r: dict, *, lang: str = "en") -> list:
     iid = str(r.get("id") or "")
     if not iid:
         return []
-    brand = ((r.get("brand") or "") + " " + (r.get("flavor") or "")).strip()[:18]
+    name = _button_name_with_date(r, name_max=16)
     open_v = t(lang, "open_verb")
     used_v = t(lang, "used_verb")
     row_btns = []
     if int(r.get("quantity") or 0) > 0:
         cb_o = f"o:{iid}"
         if len(cb_o.encode("utf-8")) <= 64:
-            label = f"{open_v} {brand}".strip()[:40] or open_v
+            label = f"{open_v} {name}".strip()[:64] or open_v
             row_btns.append({"text": label, "callback_data": cb_o})
     cb_u = f"u:{iid}"
     if len(cb_u.encode("utf-8")) <= 64:
-        label = f"{used_v} {brand}".strip()[:40] or used_v
+        label = f"{used_v} {name}".strip()[:64] or used_v
         row_btns.append({"text": label, "callback_data": cb_u})
     return row_btns
 

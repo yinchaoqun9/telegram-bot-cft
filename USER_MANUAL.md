@@ -168,7 +168,7 @@ If several items match, the bot asks you to pick one.
 
 (or `/pantry`)
 
-You’ll see up to **12** items (open portions first), each with **Open** / **Used** buttons. If you have more, use the web dashboard for the full list.
+You’ll see up to **12** items (open portions first, then **soonest best-by**), each line showing the expiry date, with **Open** / **Used** buttons (date on the button too so same brand/flavor lots stay distinct). If you have more, use the web dashboard for the full list.
 
 **Short suggestion for today:**
 
