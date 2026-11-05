@@ -26,6 +26,8 @@
       --display: "Fraunces", "Noto Sans SC", "PingFang SC", "Hiragino Sans GB", "Songti SC", Georgia, serif;
     }
     * { box-sizing: border-box; }
+    /* Author display rules (e.g. .gate) must not override logged-out/in panels */
+    [hidden] { display: none !important; }
     body {
       margin: 0;
       min-height: 100vh;
@@ -769,11 +771,12 @@
       if (!$("appPanel").hidden && $("kitchenSummary").textContent === "") {
         $("kitchenSummary").textContent = i.loading;
       }
-      if (state.serverLoginHint) {
+      // Login hints only while signed out
+      if (state.user) {
+        $("loginHint").hidden = true;
+      } else if (state.serverLoginHint) {
         $("loginHint").hidden = false;
         $("loginHint").textContent = state.serverLoginHint;
-      } else if (!state.botUsername && !$("appPanel").hidden === false) {
-        /* keep widget render messaging */
       }
     }
 
@@ -796,11 +799,16 @@
     function renderWidget() {
       const host = $("telegramWidget");
       host.innerHTML = "";
+      if (state.user) {
+        $("loginHint").hidden = true;
+        return;
+      }
       if (!state.botUsername) {
         $("loginHint").hidden = false;
         $("loginHint").textContent = t().botMissing;
         return;
       }
+      $("loginHint").hidden = true;
       const s = document.createElement("script");
       s.async = true;
       s.src = "https://telegram.org/js/telegram-widget.js?22";
@@ -812,8 +820,19 @@
       host.appendChild(s);
     }
 
+    function showLogin() {
+      state.user = null;
+      $("appPanel").hidden = true;
+      $("userBar").hidden = true;
+      $("userBar").innerHTML = "";
+      $("loginPanel").hidden = false;
+      renderWidget();
+    }
+
     function showApp() {
       $("loginPanel").hidden = true;
+      $("loginHint").hidden = true;
+      $("telegramWidget").innerHTML = "";
       $("appPanel").hidden = false;
       const u = state.user || {};
       const i = t();
@@ -826,11 +845,15 @@
             <strong>${escapeHtml(u.first_name || u.username || i.signedIn)}</strong>
             <div class="muted" style="font-size:0.85rem">id ${escapeHtml(u.user_id || "")}</div>
           </div>
-          <button type="button" class="ghost" id="logoutBtn">${escapeHtml(i.logout)}</button>
+          <button type="button" id="logoutBtn">${escapeHtml(i.logout)}</button>
         </div>`;
       $("logoutBtn").onclick = async () => {
-        await api("/api/auth/logout", { method: "POST", body: "{}" });
-        location.reload();
+        try {
+          await api("/api/auth/logout", { method: "POST", body: "{}" });
+        } catch (_) {
+          /* still clear local UI */
+        }
+        showLogin();
       };
       renderFilters();
     }
@@ -1260,8 +1283,7 @@
         renderAll();
       } catch (e) {
         if (String(e.message).toLowerCase().includes("not signed") || String(e.message).includes("401")) {
-          $("loginPanel").hidden = false;
-          $("appPanel").hidden = true;
+          showLogin();
           return;
         }
         $("appErr").hidden = false;
@@ -1285,14 +1307,10 @@
         }
         if (cfg.login_hint) {
           state.serverLoginHint = cfg.login_hint;
-          $("loginHint").hidden = false;
-          $("loginHint").textContent = cfg.login_hint;
         }
       } catch (e) {
-        $("loginHint").hidden = false;
-        $("loginHint").textContent = e.message || String(e);
+        state.serverLoginHint = e.message || String(e);
       }
-      renderWidget();
 
       try {
         const me = await api("/api/me");
@@ -1301,7 +1319,11 @@
         await loadInventory();
         await loadHousehold();
       } catch {
-        /* stay on login */
+        showLogin();
+        if (state.serverLoginHint && !state.botUsername) {
+          $("loginHint").hidden = false;
+          $("loginHint").textContent = state.serverLoginHint;
+        }
       }
 
       $("refreshBtn").onclick = async () => {

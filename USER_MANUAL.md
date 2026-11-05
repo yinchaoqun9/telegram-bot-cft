@@ -245,6 +245,7 @@ Type these in the bot chat (same commands on phone or desktop):
 | Command | Purpose |
 |---------|---------|
 | `/start` or `/help` | How to use (+ dashboard link when the host has set one) |
+| `/dashboard` | Get the web dashboard link |
 | `/language` | Switch English / 中文 (saved for you only) |
 | `/list` or `/pantry` | Show pantry (up to 12) with Open/Used buttons |
 | `/today` | Suggest up to 3 things to use today |

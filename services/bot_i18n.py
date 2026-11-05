@@ -223,16 +223,16 @@ _MESSAGES: Dict[str, Dict[str, str]] = {
         "zh": "用法：{cmd} <item_id>\n可从每日提醒复制 id，或在保存后点「开封 −1」。",
     },
     "unknown_cmd": {
-        "en": "Unknown command. Try /help · /list · /today · /language",
-        "zh": "未知命令。试试 /help · /list · /today · /language",
+        "en": "Unknown command. Try /help · /list · /today · /dashboard · /language",
+        "zh": "未知命令。试试 /help · /list · /today · /dashboard · /language",
     },
     "dashboard_link": {
-        "en": "Open the web dashboard:\n{url}",
-        "zh": "打开网页看板：\n{url}",
+        "en": "🌐 Web dashboard\n\n{url}\n\nOpen the link, then Sign in with Telegram.",
+        "zh": "🌐 网页看板\n\n{url}\n\n点开链接，再用 Telegram 登录。",
     },
     "dashboard_missing": {
-        "en": "Dashboard URL is not configured yet. Ask the admin for /dashboard.",
-        "zh": "看板地址还没配置。请向管理员要 /dashboard 链接。",
+        "en": "Dashboard URL is not configured (set DASHBOARD_PUBLIC_URL on the server).",
+        "zh": "看板地址未配置（需在服务器设置 DASHBOARD_PUBLIC_URL）。",
     },
     "pipeline_crash": {
         "en": "Something went wrong while processing your voice. Please try again.",

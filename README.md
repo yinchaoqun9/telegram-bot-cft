@@ -323,7 +323,24 @@ Items already past `best_by` are not listed. Set **`TZ`** (e.g. `America/Los_Ang
 - **Open**: sealed qty −1 + new `open_lots` row
 - Or **`/used` / `/open` / `/today`** anytime
 
-**Before user tests:** (1) run the `open_lots` + `telegram_users.lang` SQL above in Supabase, (2) deploy this code, (3) confirm the cron job is on, (4) optionally BotFather `/setcommands` for `start help language list today open used fix household join leave notify`.
+**Before user tests:** (1) run the `open_lots` + `telegram_users.lang` SQL above in Supabase, (2) deploy this code, (3) confirm the cron job is on, (4) BotFather `/setcommands` (paste below), (5) BotFather `/setdomain` = Railway host for Telegram Login.
+
+```
+start - How to use
+help - How to use
+dashboard - Open web pantry link
+language - English / 中文
+list - Show pantry
+today - Suggest what to use today
+open - Mark opened (need id)
+used - Mark used (need id)
+fix - Correct a recent entry
+household - Shared pantry / invite code
+join - Join with invite code
+leave - Leave shared pantry
+notify - Partner alerts on/off
+cancel - Cancel Fix
+```
 
 The main bot webhook must stay deployed so callbacks and commands reach the server.
 
