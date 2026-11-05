@@ -150,11 +150,34 @@ def _token_in_text(needle: str, haystack: str) -> bool:
 
 
 def infer_category_from_transcription(transcription: str) -> str:
+    """Return Chinese canonical key inferred from transcript (for matching / logic)."""
     if not transcription:
         return ""
     for alias, canonical in _ALIAS_PAIRS:
         if _token_in_text(alias, transcription):
             return canonical
+    return ""
+
+
+def spoken_category_alias_from_transcription(transcription: str) -> str:
+    """
+    Return the category wording as spoken in the transcript (not forced ZH).
+    English matches keep the casing found in the transcript.
+    """
+    if not transcription:
+        return ""
+    for alias, _canonical in _ALIAS_PAIRS:
+        if not _token_in_text(alias, transcription):
+            continue
+        if all(ord(c) < 128 for c in alias):
+            m = re.search(
+                r"(?<!\w)" + re.escape(alias) + r"(?!\w)",
+                transcription,
+                re.IGNORECASE,
+            )
+            if m:
+                return m.group(0)
+        return alias
     return ""
 
 
@@ -166,8 +189,8 @@ def normalize_category(
     raw: str, transcription: str = "", *, default: Optional[str] = None
 ) -> str:
     """
-    Map LLM category string to a canonical label, or infer from transcript.
-    If still empty, use default ("" unless caller overrides).
+    Map LLM / stored category string to a Chinese canonical key for logic
+    (EATABLE, open-shelf, dashboard category_key). Not for DB storage.
     """
     s = (raw or "").strip()
     if s:
@@ -187,3 +210,18 @@ def normalize_category(
     if default is None:
         default = DEFAULT_CATEGORY
     return default or ""
+
+
+def category_for_storage(raw: str, transcription: str = "") -> str:
+    """
+    Category text to persist: keep spoken / LLM wording when it is a known type.
+    Example: "lickable" stays "lickable" (not remapped to 猫条).
+    Matching still uses normalize_category → Chinese keys.
+    """
+    s = (raw or "").strip()
+    if s and normalize_category(s, "", default=""):
+        return s
+    spoken = spoken_category_alias_from_transcription(transcription)
+    if spoken:
+        return spoken
+    return ""

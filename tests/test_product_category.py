@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
-from services.product_category import infer_category_from_transcription, normalize_category
+from services.product_category import (
+    category_for_storage,
+    infer_category_from_transcription,
+    normalize_category,
+)
 
 
 def test_normalize_canonical_chinese():
@@ -19,6 +23,7 @@ def test_normalize_english_alias():
     assert normalize_category("medication") == "药品"
     assert normalize_category("meds") == "药品"
     assert normalize_category("litter") == "猫砂"
+    assert normalize_category("lickable") == "猫条"
 
 
 def test_normalize_from_transcript_when_raw_empty():
@@ -48,3 +53,20 @@ def test_wet_food_alias():
 def test_dry_food_alias():
     assert normalize_category("dry food") == "干粮"
     assert normalize_category("kibble") == "干粮"
+
+
+def test_storage_keeps_spoken_english():
+    assert category_for_storage("lickable") == "lickable"
+    assert category_for_storage("wet food") == "wet food"
+    assert category_for_storage("Lickable", "bought some Lickable treats") == "Lickable"
+
+
+def test_storage_keeps_spoken_chinese():
+    assert category_for_storage("猫条") == "猫条"
+    assert category_for_storage("湿粮") == "湿粮"
+    assert category_for_storage("", "买了两盒猫条鸡肉味") == "猫条"
+
+
+def test_storage_infers_english_from_transcript():
+    assert category_for_storage("", "three lickable chicken sticks") == "lickable"
+    assert category_for_storage("", "one broth pouch salmon") == "broth pouch"

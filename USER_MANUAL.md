@@ -7,7 +7,7 @@
 - **Open / used, fixes, commands** → voice **or** plain text both work.
 
 **Languages**
-- You may **speak or type** Chinese or English anytime — what you say is **saved as spoken** (brands/flavors stay in that language).
+- You may **speak or type** Chinese or English anytime — what you say is **saved as spoken** (brands, flavors, **and categories** like `lickable` / `猫条` stay in that language).
 - **System replies** (menus, buttons, errors, digests) follow your personal setting: default **English**. Switch with `/language` (per person — household partners can each choose differently; this does **not** rewrite old inventory text).
 
 ---

@@ -9,7 +9,7 @@ from __future__ import annotations
 import re
 from typing import Dict, List, Optional, Tuple
 
-from services.product_category import normalize_category
+from services.product_category import category_for_storage, normalize_category
 
 _QTY_PREFIX = re.compile(
     r"^(?:quantity|qty|数量|数量改成|改成数量|改数量)\s*[:：]?\s*",
@@ -47,16 +47,25 @@ _CATEGORY_TOKENS = {
     "treat",
     "treats",
     "cat stick",
+    "stick treat",
+    "lickable",
     "litter",
     "cat litter",
+    "kitty litter",
     "med",
     "meds",
     "medicine",
     "medication",
+    "dry food",
+    "kibble",
+    "broth",
+    "broth pouch",
+    "soup pouch",
     "主食罐",
     "湿粮罐",
     "猫罐头",
     "主食冻干",
+    "肉泥条",
 }
 
 
@@ -69,7 +78,7 @@ def parse_fix_patch(text: str) -> Dict[str, object]:
       "冻干" → {category: 冻干}
       "丸味" → {brand: 丸味}
       "丸味 冻干" → {brand: 丸味, category: 冻干}
-      "Orijen 3 wet food" → {brand: Orijen, quantity: 3, category: 罐头}
+      "Orijen 3 wet food" → {brand: Orijen, quantity: 3, category: wet food}
     """
     raw = (text or "").strip()
     if not raw:
@@ -84,7 +93,7 @@ def parse_fix_patch(text: str) -> Dict[str, object]:
     m = _CAT_PREFIX.match(raw)
     if m:
         rest = raw[m.end() :].strip()
-        cat = normalize_category(rest, rest, default="")
+        cat = category_for_storage(rest, rest)
         return {"category": cat} if cat else {}
 
     m = _BRAND_PREFIX.match(raw)
@@ -143,15 +152,18 @@ def parse_fix_message(text: str) -> Tuple[Optional[str], Dict[str, object]]:
 
 
 def _token_as_category(tok: str) -> str:
+    """Return spoken category token if recognized (do not force ZH canonical)."""
     t = (tok or "").strip()
     if not t:
         return ""
     if t.lower() not in {c.lower() for c in _CATEGORY_TOKENS} and t not in _CATEGORY_TOKENS:
-        # still allow exact normalize if the whole token is exactly a canonical
-        if t in ("冻干", "罐头", "汤包", "猫条", "零食", "猫砂", "药品"):
+        # still allow exact canonical ZH labels
+        if t in ("冻干", "罐头", "汤包", "猫条", "零食", "猫砂", "药品", "干粮"):
             return t
         return ""
-    return normalize_category(t, "", default="")
+    if normalize_category(t, "", default=""):
+        return t
+    return ""
 
 
 def _merge_multiword_category_tokens(tokens: List[str]) -> List[str]:

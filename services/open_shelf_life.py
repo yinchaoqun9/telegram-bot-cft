@@ -22,5 +22,8 @@ OPEN_SHELF_DAYS = {
 
 
 def open_shelf_days(category: Optional[str]) -> int:
-    cat = (category or "").strip() or "其他"
+    from services.product_category import normalize_category
+
+    # Stored category may be English (lickable); shelf life keys are ZH canonical
+    cat = normalize_category(category or "") or (category or "").strip() or "其他"
     return int(OPEN_SHELF_DAYS.get(cat, OPEN_SHELF_DAYS["其他"]))

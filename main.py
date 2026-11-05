@@ -23,7 +23,7 @@ from services.brand_catalog import get_brand_catalog
 from services.brand_learning import apply_user_aliases, resolve_brand_with_user_learning
 from services.brand_web_research import maybe_refine_brand_with_web_search
 from services.gemini_service import GeminiService, GeminiServiceError
-from services.product_category import normalize_category
+from services.product_category import category_for_storage
 from services.openai_service import OpenAIService, OpenAIServiceError
 from services.supabase_service import SupabaseService, SupabaseServiceError
 from services.telegram_service import TelegramService, TelegramServiceError
@@ -371,7 +371,8 @@ async def process_voice_message(
         cat_raw = (
             str(raw.get("category")) if raw.get("category") is not None else ""
         ).strip()
-        category = normalize_category(cat_raw, transcription, default="")
+        # Persist spoken wording (e.g. lickable); logic uses normalize → ZH keys
+        category = category_for_storage(cat_raw, transcription)
         try:
             quantity = int(raw.get("quantity") or 0)
         except (TypeError, ValueError):

@@ -9,7 +9,8 @@ def test_bare_quantity():
 
 
 def test_category_wet_food():
-    assert parse_fix_patch("wet food") == {"category": "罐头"}
+    assert parse_fix_patch("wet food") == {"category": "wet food"}
+    assert parse_fix_patch("lickable") == {"category": "lickable"}
 
 
 def test_brand_default():
@@ -25,7 +26,7 @@ def test_brand_and_category_together():
 
 def test_meds_category_token():
     assert parse_fix_patch("药品") == {"category": "药品"}
-    assert parse_fix_patch("meds") == {"category": "药品"}
+    assert parse_fix_patch("meds") == {"category": "meds"}
     assert parse_fix_patch("Apoquel 药品") == {"brand": "Apoquel", "category": "药品"}
 
 
@@ -33,7 +34,7 @@ def test_brand_qty_category():
     patch = parse_fix_patch("Orijen 3 wet food")
     assert patch.get("brand") == "Orijen"
     assert patch.get("quantity") == 3
-    assert patch.get("category") == "罐头"
+    assert patch.get("category") == "wet food"
 
 
 def test_parse_fix_message_wrapper():
