@@ -23,9 +23,13 @@ Pet supplies are bought in bulk, opened at different times and expire on differe
 - 15 test files with all external APIs mocked (`pytest -q`).
 
 ### Demo
-![Log by voice](docs/demo1.gif)
 
-![Open / disambiguate](docs/demo2.gif)
+<table>
+  <tr>
+    <td align="center" width="50%"><img src="docs/demo1.gif" alt="Log by voice" width="280" /><br/>Log by voice</td>
+    <td align="center" width="50%"><img src="docs/demo2.gif" alt="Open / disambiguate" width="280" /><br/>Open / disambiguate</td>
+  </tr>
+</table>
 
 ---
 *Developer and deployment docs below. End-user guide: [USER_MANUAL.md](USER_MANUAL.md).*
