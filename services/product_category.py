@@ -190,7 +190,7 @@ DEFAULT_CATEGORY = ""
 # When the user spoke English but the LLM returned a ZH canonical, store EN.
 _CANONICAL_EN_LABEL: dict = {
     "冻干": "freeze-dried",
-    "罐头": "wet food",
+    "罐头": "can",
     "汤包": "broth pouch",
     "猫条": "lickable",
     "零食": "treat",
@@ -283,9 +283,10 @@ def category_for_storage(raw: str, transcription: str = "") -> str:
 
     if key_from_raw:
         if en_mode:
-            if _has_cjk(s):
-                return _label_for_key(key_from_raw, english=True)
-            return s
+            # Always use EN defaults (罐头/wet food → can); keep can/cans as spoken
+            if s.lower() in ("can", "cans"):
+                return s.lower()
+            return _label_for_key(key_from_raw, english=True)
         if _has_cjk(transcription) and not _has_cjk(s):
             return key_from_raw
         return s if s else key_from_raw

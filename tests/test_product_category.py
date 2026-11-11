@@ -59,7 +59,8 @@ def test_dry_food_alias():
 
 def test_storage_keeps_spoken_english():
     assert category_for_storage("lickable") == "lickable"
-    assert category_for_storage("wet food") == "wet food"
+    assert category_for_storage("can", "two cans of tuna") == "can"
+    assert category_for_storage("cans", "two cans of tuna") == "cans"
     assert category_for_storage("Lickable", "bought some Lickable treats") == "Lickable"
 
 
@@ -80,9 +81,9 @@ def test_storage_does_not_bleed_freeze_dried_onto_cans():
         "Two cans of Fancy Feast chicken, best by June first, "
         "and one bag of Ziwi beef freeze dried."
     )
-    # Fancy Feast row from LLM
-    assert category_for_storage("wet food", tr) == "wet food"
-    assert category_for_storage("罐头", tr) == "wet food"
+    # Fancy Feast row from LLM — EN default is can (not wet food)
+    assert category_for_storage("wet food", tr) == "can"
+    assert category_for_storage("罐头", tr) == "can"
     assert category_for_storage("cans", tr) == "cans"
     # Ziwi row
     assert category_for_storage("freeze-dried", tr) == "freeze-dried"
@@ -92,14 +93,14 @@ def test_storage_does_not_bleed_freeze_dried_onto_cans():
 
 
 def test_storage_en_maps_llm_chinese_without_transcript_hijack():
-    assert category_for_storage("罐头", "bought two Fancy Feast chicken cans") == "wet food"
+    assert category_for_storage("罐头", "bought two Fancy Feast chicken cans") == "can"
     # Even if another type word appears, per-item raw wins
-    assert category_for_storage("罐头", "cans of tuna and also freeze dried") == "wet food"
+    assert category_for_storage("罐头", "cans of tuna and also freeze dried") == "can"
 
 
 def test_display_follows_ui_language():
-    assert display_category("罐头", "en") == "wet food"
-    assert display_category("wet food", "en") == "wet food"
+    assert display_category("罐头", "en") == "can"
+    assert display_category("wet food", "en") == "can"
     assert display_category("freeze-dried", "zh") == "冻干"
     assert display_category("冻干", "zh") == "冻干"
     assert display_category("lickable", "en") == "lickable"

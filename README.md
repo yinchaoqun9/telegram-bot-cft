@@ -166,7 +166,7 @@ CREATE INDEX IF NOT EXISTS open_lots_inventory_active_idx
 
 After a voice save, tap **Fix** → send one line; the bot auto-detects:
 - a **number** → quantity
-- a **category** (`罐头` / `wet food` / `冻干` / …) → category  
+- a **category** (`罐头` / `can` / `冻干` / …) → category  
 - otherwise → **brand** (and learns `wrong → correct` for that user)
 
 Or `/fix brand|quantity|category <item_id> <value>`. Category is optional (no forced wet-food default). Meds use `category=药品` and put the drug name in `flavor`.

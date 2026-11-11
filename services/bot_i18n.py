@@ -166,7 +166,7 @@ _MESSAGES: Dict[str, Dict[str, str]] = {
             "Send a correction (one or more fields in one message):\n"
             "• brand  (now: {brand})\n"
             "• quantity number  (now: {qty})\n"
-            "• category e.g. 罐头/wet food/冻干  (now: {cat})\n"
+            "• category e.g. 罐头/can/冻干  (now: {cat})\n"
             "Example: 丸味 冻干\n"
             "Or /cancel"
         ),
@@ -174,7 +174,7 @@ _MESSAGES: Dict[str, Dict[str, str]] = {
             "发一条修正（可一次改多项）：\n"
             "• 品牌  （现在：{brand}）\n"
             "• 数量数字  （现在：{qty}）\n"
-            "• 品类，如 罐头/wet food/冻干  （现在：{cat}）\n"
+            "• 品类，如 罐头/can/冻干  （现在：{cat}）\n"
             "例如：丸味 冻干\n"
             "或 /cancel 取消"
         ),
@@ -198,7 +198,7 @@ _MESSAGES: Dict[str, Dict[str, str]] = {
             "/fix <item_id>  (then send e.g. 丸味 冻干)\n"
             "/fix brand <item_id> <name>\n"
             "/fix quantity <item_id> <n>\n"
-            "/fix category <item_id> <罐头|wet food|…>\n"
+            "/fix category <item_id> <罐头|can|…>\n"
             "Or tap Fix under a Saved confirmation."
         ),
         "zh": (
@@ -206,7 +206,7 @@ _MESSAGES: Dict[str, Dict[str, str]] = {
             "/fix <item_id>  （然后发例如 丸味 冻干）\n"
             "/fix brand <item_id> <名称>\n"
             "/fix quantity <item_id> <数量>\n"
-            "/fix category <item_id> <罐头|wet food|…>\n"
+            "/fix category <item_id> <罐头|can|…>\n"
             "或在保存确认下点 Fix。"
         ),
     },
@@ -349,11 +349,11 @@ _MESSAGES: Dict[str, Dict[str, str]] = {
     "saved_footer": {
         "en": (
             "\n\nTap Fix, then send a brand name, a number (qty), or a category "
-            "(罐头/wet food/冻干…).\n"
+            "(罐头/can/冻干…).\n"
             "Open −1 = opened one pack/can. Delete removes the row."
         ),
         "zh": (
-            "\n\n点 Fix，然后发品牌名、数量或品类（罐头/wet food/冻干…）。\n"
+            "\n\n点 Fix，然后发品牌名、数量或品类（罐头/can/冻干…）。\n"
             "开封 −1 = 刚打开一罐/袋。Delete 删除整行。"
         ),
     },

@@ -39,9 +39,9 @@ OUTPUT FORMAT (VERY IMPORTANT):
   - "flavor"   (string or null)
   - "category" (string or null) — per item, independently. Prefer labels in the
     SAME language as that item's wording:
-    English: freeze-dried | wet food | broth pouch | lickable | treat | dry food | litter | meds
+    English: freeze-dried | can | broth pouch | lickable | treat | dry food | litter | meds
     Chinese: 冻干 | 罐头 | 汤包 | 猫条 | 零食 | 干粮 | 猫砂 | 药品
-    If the type is unclear, use null — do NOT default to wet food/罐头.
+    If the type is unclear, use null — do NOT default to can/罐头. Prefer "can" (not "wet food").
   - "best_by"  (string or null, YYYY-MM-DD)
   - "quantity" (integer or null)
 - No extra keys, no wrapper, no markdown, no explanations.
@@ -52,7 +52,7 @@ INTERPRETATION RULES (flexible speech):
 - MULTI-ITEM: set category for EACH object from THAT object's cues only.
   Never copy freeze-dried/冻干 onto a different brand that was described as cans/湿粮.
   Example: "Two cans of Fancy Feast chicken … and one bag of Ziwi beef freeze dried"
-  → item1 Fancy Feast category "wet food" (cans); item2 Ziwi category "freeze-dried".
+  → item1 Fancy Feast category "can" (cans); item2 Ziwi category "freeze-dried".
 - brand: maker / food brand / pharmacy brand if spoken (Royal Canin, 丸味, Zoetis).
   Copy uncommon names exactly. null if none.
 - flavor:
@@ -61,9 +61,9 @@ INTERPRETATION RULES (flexible speech):
     (e.g. "Apoquel 16mg", "甲状腺药", "gabapentin 100mg").
   - If only one product-like name is spoken and it is a medicine, put it in
     flavor and set category to meds/药品; brand may be null.
-- category cues: can(s)/canned/wet food → wet food; freeze-dried/冻干 → freeze-dried;
+- category cues: can(s)/canned → can; freeze-dried/冻干 → freeze-dried;
   litter/猫砂; meds/药; lickable/猫条; kibble/dry food/干粮.
-  Never force wet food when the user is talking about meds, litter, or dry food.
+  Never force can when the user is talking about meds, litter, or dry food.
 - best_by: expiry / best-by if mentioned; else null. Dates may apply to the
   nearest preceding item only.
 - quantity: units (cans/bags/bottles/boxes). Words like "two"/"两" → integer.
@@ -73,7 +73,7 @@ INTERPRETATION RULES (flexible speech):
 
 EXAMPLES (conceptual):
 - "Fancy Feast 鸡肉两罐，保质期 2025-06-01" → food row, category 罐头.
-- "Two cans of Fancy Feast chicken, best by 2026-06-01" → category "wet food".
+- "Two cans of Fancy Feast chicken, best by 2026-06-01" → category "can".
 - "还有半瓶 Apoquel 十六毫克" → category 药品, flavor "Apoquel 16mg",
   quantity null or 1, brand null unless a maker was said.
 - "买了猫砂一大袋" → category 猫砂.

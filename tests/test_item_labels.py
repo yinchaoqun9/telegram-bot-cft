@@ -37,7 +37,7 @@ def test_item_label_includes_best_by():
         {
             "brand": "Ziwi",
             "flavor": "beef",
-            "category": "wet food",
+            "category": "can",
             "best_by": "2026-05-01",
             "quantity": 2,
         },
@@ -60,7 +60,8 @@ def test_item_label_localizes_chinese_category_in_en_ui():
         },
         lang="en",
     )
-    assert "wet food" in label
+    assert "can" in label
+    assert "wet food" not in label
     assert "罐头" not in label
 
 

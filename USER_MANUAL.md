@@ -8,7 +8,7 @@
 
 **Languages**
 - You may **speak or type** Chinese or English anytime — brands/flavors stay as spoken; categories are saved from **each item’s** cues (e.g. “cans” vs “freeze dried” in the same sentence won’t mix).
-- **System replies** (menus, buttons, errors, digests, **category labels**) follow your personal `/language` setting (default **English**). Old rows stored as `罐头` still show as **wet food** in English mode.
+- **System replies** (menus, buttons, errors, digests, **category labels**) follow your personal `/language` setting (default **English**). Old rows stored as `罐头` still show as **can** in English mode.
 
 ---
 
@@ -191,7 +191,7 @@ The daily morning message:
 After a save, tap **Fix**, then send one short line, for example:
 
 - a **number** → changes quantity  
-- a **category** (`罐头` / wet food / `冻干` / litter / meds …) → changes type  
+- a **category** (`罐头` / can / `冻干` / litter / meds …) → changes type  
 - otherwise → treated as a **brand** correction  
 
 Or:
