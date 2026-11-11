@@ -7,8 +7,8 @@
 - **Open / used, fixes, commands** → voice **or** plain text both work.
 
 **Languages**
-- You may **speak or type** Chinese or English anytime — what you say is **saved as spoken** (brands, flavors, **and categories** like `lickable` / `猫条` stay in that language).
-- **System replies** (menus, buttons, errors, digests) follow your personal setting: default **English**. Switch with `/language` (per person — household partners can each choose differently; this does **not** rewrite old inventory text).
+- You may **speak or type** Chinese or English anytime — brands/flavors stay as spoken; categories are saved from **each item’s** cues (e.g. “cans” vs “freeze dried” in the same sentence won’t mix).
+- **System replies** (menus, buttons, errors, digests, **category labels**) follow your personal `/language` setting (default **English**). Old rows stored as `罐头` still show as **wet food** in English mode.
 
 ---
 

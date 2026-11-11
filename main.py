@@ -23,7 +23,7 @@ from services.brand_catalog import get_brand_catalog
 from services.brand_learning import apply_user_aliases, resolve_brand_with_user_learning
 from services.brand_web_research import maybe_refine_brand_with_web_search
 from services.gemini_service import GeminiService, GeminiServiceError
-from services.product_category import category_for_storage
+from services.product_category import category_for_storage, display_category
 from services.openai_service import OpenAIService, OpenAIServiceError
 from services.supabase_service import SupabaseService, SupabaseServiceError
 from services.telegram_service import TelegramService, TelegramServiceError
@@ -534,10 +534,10 @@ def _short_best_by(row: dict) -> str:
     return bb[:10]
 
 
-def _item_label(row: dict) -> str:
+def _item_label(row: dict, *, lang: str = "en") -> str:
     brand = (row.get("brand") or "").strip()
     flavor = (row.get("flavor") or "").strip()
-    cat = (row.get("category") or "").strip()
+    cat = display_category(row.get("category") or "", lang)
     qty = int(row.get("quantity") or 0)
     open_n = int(row.get("open_lots_count") or (1 if row.get("has_open_lot") else 0))
     bits = [x for x in (brand, flavor) if x]
@@ -584,7 +584,7 @@ async def _send_consume_pick(
 ) -> None:
     tg = get_telegram()
     keyboard = _consume_pick_keyboard(action, candidates, lang=lang)
-    text = header + "\n" + "\n".join(f"• {_item_label(r)}" for r in candidates)
+    text = header + "\n" + "\n".join(f"• {_item_label(r, lang=lang)}" for r in candidates)
     if keyboard:
         await tg.send_message_with_inline_keyboard(
             chat_id, text, keyboard, parse_mode=None
@@ -641,7 +641,7 @@ async def apply_consume_match(
             ok, detail = await try_open_inventory(user_id, iid)
         else:
             ok, detail = await try_decrement_inventory(user_id, iid)
-        label = _item_label(top)
+        label = _item_label(top, lang=lang)
         verb = t(lang, "open_verb") if action == "open" else t(lang, "used_verb")
         await tg.send_message(
             chat_id,
@@ -722,7 +722,7 @@ async def handle_today_command(chat_id: int, user_id: int) -> None:
     lines = [t(lang, "today_header")]
     keyboard = []
     for r in picks:
-        lines.append(f"• {_item_label(r)}")
+        lines.append(f"• {_item_label(r, lang=lang)}")
         row_btns = _open_used_row_buttons(r, lang=lang)
         if row_btns:
             keyboard.append(row_btns)
@@ -757,7 +757,7 @@ async def handle_list_command(chat_id: int, user_id: int) -> None:
     lines = [t(lang, "list_header", n=len(ordered))]
     keyboard = []
     for r in shown:
-        lines.append(f"• {_item_label(r)}")
+        lines.append(f"• {_item_label(r, lang=lang)}")
         row_btns = _open_used_row_buttons(r, lang=lang)
         if row_btns:
             keyboard.append(row_btns)

@@ -33,7 +33,8 @@ _CATEGORY_ALIASES: List[Tuple[str, List[str]]] = [
             "wet",
             "canned food",
             "canned",
-            # spoken “tuna can” / “a can of …”
+            # spoken “two cans” / “tuna can” / “a can of …”
+            "cans",
             "can",
         ],
     ),
@@ -240,32 +241,73 @@ def normalize_category(
     return default or ""
 
 
-def category_for_storage(raw: str, transcription: str = "") -> str:
-    """
-    Persist category in the language the user spoke.
+def category_keys_in_transcription(transcription: str) -> List[str]:
+    """Distinct canonical keys mentioned in a (possibly multi-item) transcript."""
+    if not transcription:
+        return []
+    found: List[str] = []
+    seen = set()
+    for alias, canonical in _ALIAS_PAIRS:
+        if canonical in seen:
+            continue
+        if _token_in_text(alias, transcription):
+            seen.add(canonical)
+            found.append(canonical)
+    return found
 
-    - Prefer an alias actually present in the transcript (e.g. lickable, can).
-    - If the LLM returns ZH (罐头) but the transcript is English → store EN label.
-    - Matching still uses normalize_category → Chinese keys.
-    """
-    spoken = spoken_category_alias_from_transcription(transcription)
-    if spoken:
-        return spoken
 
-    s = (raw or "").strip()
-    key = normalize_category(s, transcription, default="") if (s or transcription) else ""
+def _label_for_key(key: str, *, english: bool) -> str:
     if not key:
         return ""
-
-    en_mode = transcript_looks_english(transcription)
-    if s:
-        if en_mode and _has_cjk(s):
-            return _CANONICAL_EN_LABEL.get(key, _CANONICAL_EN_LABEL.get(normalize_category(s, ""), s))
-        if (not en_mode) and _has_cjk(transcription) and not _has_cjk(s):
-            # Chinese speech but LLM returned English → keep ZH canonical
-            return key
-        return s
-
-    if en_mode:
+    if english:
         return _CANONICAL_EN_LABEL.get(key, key)
     return key
+
+
+def category_for_storage(raw: str, transcription: str = "") -> str:
+    """
+    Persist per-item category in the language the user spoke.
+
+    Critical: do NOT scan the whole multi-item transcript for a single alias
+    and apply it to every row (that turned Fancy Feast cans into freeze-dried).
+
+    Order:
+    1) Trust per-item LLM `raw` when it maps to a known type
+    2) Only if raw is empty/unknown AND the transcript mentions exactly one
+       category type, infer from transcript
+    3) Otherwise leave empty (better than cross-item contamination)
+    """
+    s = (raw or "").strip()
+    en_mode = transcript_looks_english(transcription)
+    key_from_raw = normalize_category(s, "", default="") if s else ""
+
+    if key_from_raw:
+        if en_mode:
+            if _has_cjk(s):
+                return _label_for_key(key_from_raw, english=True)
+            return s
+        if _has_cjk(transcription) and not _has_cjk(s):
+            return key_from_raw
+        return s if s else key_from_raw
+
+    keys = category_keys_in_transcription(transcription)
+    if len(keys) == 1:
+        key = keys[0]
+        spoken = spoken_category_alias_from_transcription(transcription)
+        if spoken and normalize_category(spoken, "", default="") == key:
+            return spoken
+        return _label_for_key(key, english=en_mode)
+    return ""
+
+
+def display_category(stored: str, lang: str = "en") -> str:
+    """
+    UI label for a stored category, following the user's /language setting.
+    Storage may be EN or ZH; display is always localized.
+    """
+    from services.bot_i18n import normalize_lang
+
+    key = normalize_category(stored or "", default="")
+    if not key:
+        return (stored or "").strip()
+    return _label_for_key(key, english=(normalize_lang(lang) != "zh"))

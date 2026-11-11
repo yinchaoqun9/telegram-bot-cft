@@ -58,10 +58,12 @@ def _max_buttons() -> int:
         return 18
 
 
-def _format_item_line(r: Dict[str, Any]) -> str:
+def _format_item_line(r: Dict[str, Any], *, lang: str = "en") -> str:
+    from services.product_category import display_category
+
     brand = (r.get("brand") or "").strip()
     flavor = (r.get("flavor") or "").strip()
-    cat = (r.get("category") or "").strip()
+    cat = display_category(r.get("category") or "", lang)
     best_by = r.get("best_by") or ""
     qty = int(r.get("quantity") or 0)
     iid = str(r.get("id") or "")
@@ -86,12 +88,12 @@ def _build_digest_text(
     parts: List[str] = []
     if within_7:
         parts.append(t(lang, "digest_7"))
-        parts.extend(_format_item_line(r) for r in within_7)
+        parts.extend(_format_item_line(r, lang=lang) for r in within_7)
     if within_8_15:
         if parts:
             parts.append("")
         parts.append(t(lang, "digest_8n", n=window_days))
-        parts.extend(_format_item_line(r) for r in within_8_15)
+        parts.extend(_format_item_line(r, lang=lang) for r in within_8_15)
 
     total_items = len(within_7) + len(within_8_15)
     if total_items > len(with_buttons):
@@ -146,7 +148,7 @@ def _build_eat_today(
     open_v = t(lang, "open_verb")
     used_v = t(lang, "used_verb")
     for r in picks:
-        lines.append(_format_item_line(r))
+        lines.append(_format_item_line(r, lang=lang))
         iid = str(r.get("id") or "")
         if not iid:
             continue

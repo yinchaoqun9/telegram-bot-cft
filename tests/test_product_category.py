@@ -1,9 +1,10 @@
-"""Unit tests for product category normalization."""
+"""Unit tests for product category normalization / storage / display."""
 
 from __future__ import annotations
 
 from services.product_category import (
     category_for_storage,
+    display_category,
     infer_category_from_transcription,
     normalize_category,
 )
@@ -19,6 +20,7 @@ def test_normalize_canonical_chinese():
 def test_normalize_english_alias():
     assert normalize_category("freeze-dried") == "冻干"
     assert normalize_category("canned") == "罐头"
+    assert normalize_category("cans") == "罐头"
     assert normalize_category("treat") == "零食"
     assert normalize_category("medication") == "药品"
     assert normalize_category("meds") == "药品"
@@ -62,25 +64,46 @@ def test_storage_keeps_spoken_english():
 
 
 def test_storage_keeps_spoken_chinese():
-    assert category_for_storage("猫条") == "猫条"
-    assert category_for_storage("湿粮") == "湿粮"
+    assert category_for_storage("猫条", "买了猫条") == "猫条"
+    assert category_for_storage("湿粮", "买了湿粮") == "湿粮"
     assert category_for_storage("", "买了两盒猫条鸡肉味") == "猫条"
 
 
-def test_storage_infers_english_from_transcript():
+def test_storage_infers_english_from_transcript_single_type():
     assert category_for_storage("", "three lickable chicken sticks") == "lickable"
     assert category_for_storage("", "one broth pouch salmon") == "broth pouch"
 
 
-def test_storage_en_transcript_rejects_llm_chinese():
-    """LLM often returns 罐头 even when the user spoke English."""
-    assert (
-        category_for_storage("罐头", "finish 9 lives tuna can") == "can"
-        or category_for_storage("罐头", "bought wet food tuna") == "wet food"
+def test_storage_does_not_bleed_freeze_dried_onto_cans():
+    """Multi-item EN utterance: per-item LLM raw must win; no whole-transcript override."""
+    tr = (
+        "Two cans of Fancy Feast chicken, best by June first, "
+        "and one bag of Ziwi beef freeze dried."
     )
-    # Prefer spoken alias in transcript
-    assert category_for_storage("罐头", "added three lickable treats") == "lickable"
-    assert category_for_storage("罐头", "one can of tuna") in ("can", "wet food")
+    # Fancy Feast row from LLM
+    assert category_for_storage("wet food", tr) == "wet food"
+    assert category_for_storage("罐头", tr) == "wet food"
+    assert category_for_storage("cans", tr) == "cans"
+    # Ziwi row
+    assert category_for_storage("freeze-dried", tr) == "freeze-dried"
+    assert category_for_storage("冻干", tr) == "freeze-dried"
+    # Empty raw + multi-type transcript → do not guess
+    assert category_for_storage("", tr) == ""
+
+
+def test_storage_en_maps_llm_chinese_without_transcript_hijack():
+    assert category_for_storage("罐头", "bought two Fancy Feast chicken cans") == "wet food"
+    # Even if another type word appears, per-item raw wins
+    assert category_for_storage("罐头", "cans of tuna and also freeze dried") == "wet food"
+
+
+def test_display_follows_ui_language():
+    assert display_category("罐头", "en") == "wet food"
+    assert display_category("wet food", "en") == "wet food"
+    assert display_category("freeze-dried", "zh") == "冻干"
+    assert display_category("冻干", "zh") == "冻干"
+    assert display_category("lickable", "en") == "lickable"
+    assert display_category("猫条", "en") == "lickable"
 
 
 def test_normalize_can_alias():

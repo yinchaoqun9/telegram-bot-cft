@@ -37,11 +37,11 @@ OUTPUT FORMAT (VERY IMPORTANT):
 - Each element MUST be an object with exactly these keys:
   - "brand"    (string or null)
   - "flavor"   (string or null)
-  - "category" (string or null) — prefer ONE of these Chinese labels when clear:
-    冻干 | 罐头 | 汤包 | 猫条 | 零食 | 猫砂 | 药品
-    (freeze-dried / wet food·罐头 / soup pouch / lickable stick / treats /
-     litter / medication).
-    If the type is unclear, use null — do NOT default to 罐头.
+  - "category" (string or null) — per item, independently. Prefer labels in the
+    SAME language as that item's wording:
+    English: freeze-dried | wet food | broth pouch | lickable | treat | dry food | litter | meds
+    Chinese: 冻干 | 罐头 | 汤包 | 猫条 | 零食 | 干粮 | 猫砂 | 药品
+    If the type is unclear, use null — do NOT default to wet food/罐头.
   - "best_by"  (string or null, YYYY-MM-DD)
   - "quantity" (integer or null)
 - No extra keys, no wrapper, no markdown, no explanations.
@@ -49,6 +49,10 @@ OUTPUT FORMAT (VERY IMPORTANT):
 INTERPRETATION RULES (flexible speech):
 - Speakers do NOT have to say brand then flavor then quantity then date.
   Partial utterances are valid (e.g. only a drug name, or only "two chicken cans").
+- MULTI-ITEM: set category for EACH object from THAT object's cues only.
+  Never copy freeze-dried/冻干 onto a different brand that was described as cans/湿粮.
+  Example: "Two cans of Fancy Feast chicken … and one bag of Ziwi beef freeze dried"
+  → item1 Fancy Feast category "wet food" (cans); item2 Ziwi category "freeze-dried".
 - brand: maker / food brand / pharmacy brand if spoken (Royal Canin, 丸味, Zoetis).
   Copy uncommon names exactly. null if none.
 - flavor:
@@ -56,11 +60,12 @@ INTERPRETATION RULES (flexible speech):
   - Medication: put the DRUG / PRODUCT NAME (+ strength if said) here
     (e.g. "Apoquel 16mg", "甲状腺药", "gabapentin 100mg").
   - If only one product-like name is spoken and it is a medicine, put it in
-    flavor and set category to 药品; brand may be null.
-- category: listen for food types, litter, or medicine words
-  (药/药品/medication/meds/pill, litter/猫砂, wet food/罐头, freeze-dried/冻干, …).
-  Never force 罐头 when the user is talking about meds, litter, or dry food.
-- best_by: expiry / best-by if mentioned; else null.
+    flavor and set category to meds/药品; brand may be null.
+- category cues: can(s)/canned/wet food → wet food; freeze-dried/冻干 → freeze-dried;
+  litter/猫砂; meds/药; lickable/猫条; kibble/dry food/干粮.
+  Never force wet food when the user is talking about meds, litter, or dry food.
+- best_by: expiry / best-by if mentioned; else null. Dates may apply to the
+  nearest preceding item only.
 - quantity: units (cans/bags/bottles/boxes). Words like "two"/"两" → integer.
   null if not said.
 - Uncertain fields → null. Prefer a brand guess only when a brand-like name
@@ -68,11 +73,12 @@ INTERPRETATION RULES (flexible speech):
 
 EXAMPLES (conceptual):
 - "Fancy Feast 鸡肉两罐，保质期 2025-06-01" → food row, category 罐头.
+- "Two cans of Fancy Feast chicken, best by 2026-06-01" → category "wet food".
 - "还有半瓶 Apoquel 十六毫克" → category 药品, flavor "Apoquel 16mg",
   quantity null or 1, brand null unless a maker was said.
 - "买了猫砂一大袋" → category 猫砂.
 - "丸味冻干还剩三袋" → brand 丸味, category 冻干, quantity 3.
-- "two bags of Orijen dog food" → brand Orijen; category null unless type clear.
+- "two bags of Orijen dog food" → brand Orijen; category "dry food" if clear.
 
 STRICT OUTPUT: ONLY a JSON array of item objects."""
 

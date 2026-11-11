@@ -243,10 +243,11 @@ class TelegramService:
         """
         Send confirmation for saved rows (must include Supabase `id` per row).
         Adds inline Delete buttons (callback_data d:{uuid}).
-        Brand/flavor/category text stays as stored (spoken language).
+        Brand/flavor stay as stored (spoken). Category label follows UI `lang`.
         Wrapper labels follow `lang`.
         """
         from services.bot_i18n import t
+        from services.product_category import display_category
 
         if not saved_rows:
             return
@@ -283,7 +284,7 @@ class TelegramService:
             return kb
 
         def _line(item: Dict[str, Any]) -> str:
-            cat = (item.get("category") or "").strip()
+            cat = display_category(item.get("category") or "", lang)
             cat_bit = f"[{cat}] " if cat else ""
             return t(
                 lang,
