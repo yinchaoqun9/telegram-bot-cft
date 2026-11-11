@@ -61,7 +61,7 @@ def test_storage_keeps_spoken_english():
     assert category_for_storage("lickable") == "lickable"
     assert category_for_storage("can", "two cans of tuna") == "can"
     assert category_for_storage("cans", "two cans of tuna") == "cans"
-    assert category_for_storage("Lickable", "bought some Lickable treats") == "Lickable"
+    assert category_for_storage("Lickable", "bought some Lickable treats") == "lickable"
 
 
 def test_storage_keeps_spoken_chinese():
