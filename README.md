@@ -1,8 +1,34 @@
-# Pet Pantry (Telegram bot)
+# Pet Pantry
 
-Voice-first pantry tracker for **cat/dog food, litter, and meds** (EN + ZH). Backend: FastAPI webhook/polling → STT (**Gemini `gemini-3.5-transcribe` → OpenAI `gpt-transcribe` → AssemblyAI Universal-3.5 Pro**) → structured extract (Gemini flash → GPT) → brand normalize (local JSON + `rapidfuzz`) → Supabase.
+> **Pet Pantry** is a voice-first Telegram bot that tracks pet food, litter and meds in English and Chinese. I designed, built and deployed it end to end, and it's in daily use in my own household.
 
-End-user docs: [`USER_MANUAL.md`](USER_MANUAL.md). This README is for developers / deploy.
+![Pet Pantry flow](docs/pet-pantry-flow.png)
+
+### Why I built it
+Pet supplies are bought in bulk, opened at different times and expire on different dates, so it's easy to waste food or run out. Typing every item into a spreadsheet is tedious, so Pet Pantry lets you log stock in one natural voice note and reminds you what to use first.
+
+### What it does
+- **Log by voice:** say "two cans of Fancy Feast chicken, best by June 1" and get structured rows; several items per message.
+- **Reliable AI pipeline:** speech-to-text falls back from Gemini to OpenAI to AssemblyAI; extraction falls back from Gemini Flash to GPT.
+- **Gets smarter with use:** every **Fix** is saved as a per-user brand alias and applied before the global catalog, with no model fine-tuning.
+- **Tracks real usage:** sealed stock and opened portions are tracked separately, so several cans can be open at once and "Used" finishes the oldest first.
+- **Stays ahead:** a daily digest of what's expiring (or "today's picks"), a Telegram-login web dashboard, and a shared pantry for two people.
+
+### Data model
+![Supabase schema](docs/pet-pantry-schema.png)
+
+### Results
+- In daily use since [month year]; [X] items logged.
+- Voice-to-saved-row accuracy: [X]% on a [X]-case test set (see evals, coming soon).
+- 15 test files with all external APIs mocked (`pytest -q`).
+
+### Demo
+![Log by voice](docs/demo-voice.jpg)
+
+![Open / disambiguate](docs/demo-open.jpg)
+
+---
+*Developer and deployment docs below. End-user guide: [USER_MANUAL.md](USER_MANUAL.md).*
 
 ## Features
 
